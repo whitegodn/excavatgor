@@ -104,6 +104,8 @@ export class ExcavatorSim {
   spilledByTravel = 0;
   /** 차체의 좌우 기울기(오른쪽이 높으면 +). 0.2면 약 11° */
   roll = 0;
+  /** 이번 틱에 버킷이 덤프트럭에 막혀 움직이지 못했는가 */
+  truckBlocked = false;
   private prevV = 0;
   private prevYaw = 0;
   /** 들다가 굴착 구역에 도로 떨어뜨린 흙 */
@@ -287,6 +289,20 @@ export class ExcavatorSim {
     const rpmF = 0.35 + 0.065 * clamp(cmd.rpm, 1, 10);
     const g = share * rpmF;
 
+    // 덤프트럭에 부딪히는지 보려고 움직이기 전의 자세를 적어 둔다
+    const held = this.site.truck
+      ? {
+          boom: this.boom.length,
+          arm: this.arm.length,
+          bucket: this.bucket.length,
+          swing: this.swing,
+          x: this.x,
+          z: this.z,
+          heading: this.heading,
+          hit: this.truckContact(p0),
+        }
+      : null;
+
     // 4) 실린더: 붐 올리기는 저항을 받지 않고, 버킷 오므리기는 힘이 가장 세다
     this.boom.step(S.boom * this.boom.vMax * g * (S.boom > 0 ? 1 : sBoomDown), DT);
     this.arm.step(S.arm * this.arm.vMax * g * sDig, DT);
@@ -314,7 +330,9 @@ export class ExcavatorSim {
     const hx = Math.sin(this.heading) * 1.5;
     const hz = Math.cos(this.heading) * 1.5;
     const grade = (this.terrain.heightAt(this.x + hx, this.z + hz) - this.terrain.heightAt(this.x - hx, this.z - hz)) / 3;
-    const slope = clamp(1 - 1.6 * grade * Math.sign(this.trackL + this.trackR), 0.4, 1.25);
+    // 제자리 회전(좌우 궤도가 반대)에는 오르막·내리막이 상쇄된다. 앞뒤로 가는 만큼만 비탈의 영향을 받는다
+    const along = (this.trackL + this.trackR) / (Math.abs(this.trackL) + Math.abs(this.trackR) + 1e-6);
+    const slope = clamp(1 - 1.6 * grade * along, 0.4, 1.25);
     const top = sp.travelMax * (cmd.fast ? 1.8 : 1) * g * sTravel * slope;
     // 레버를 놓으면 유압 모터가 바로 버텨 준다: 가속보다 훨씬 빨리 멈춘다
     const follow = (track: number, target: number): number => {
@@ -346,6 +364,44 @@ export class ExcavatorSim {
     this.x = clamp(this.x + (Math.sin(this.heading) * v + lx * slide) * DT, -lim, lim);
     this.z = clamp(this.z + (Math.cos(this.heading) * v + lz * slide) * DT, -lim, lim);
     this.y += (this.groundUnderTracks() - this.y) * Math.min(1, DT / 0.2);
+
+    // 덤프트럭은 단단하다: 버킷이 적재함 벽보다 낮은 채로 트럭 자리에 들어가려 하면 그 움직임을 막는다
+    this.truckBlocked = false;
+    if (held && !held.hit && this.truckContact(this.pose())) {
+      const moved = { swing: this.swing, x: this.x, z: this.z, heading: this.heading };
+      const undoBody = () => {
+        this.swing = held.swing;
+        this.x = held.x;
+        this.z = held.z;
+        this.heading = held.heading;
+      };
+      // 먼저 선회·주행만 되돌려 본다. 그래도 닿으면 팔(붐·암·버킷)의 움직임이 원인이다
+      undoBody();
+      let bodyStopped = true;
+      if (this.truckContact(this.pose())) {
+        this.swing = moved.swing;
+        this.x = moved.x;
+        this.z = moved.z;
+        this.heading = moved.heading;
+        this.boom.length = held.boom;
+        this.arm.length = held.arm;
+        this.bucket.length = held.bucket;
+        bodyStopped = false;
+        if (this.truckContact(this.pose())) {
+          undoBody();
+          bodyStopped = true;
+        }
+      }
+      if (bodyStopped) {
+        this.swingVel = 0;
+        this.swingAcc = 0;
+        this.trackL = 0;
+        this.trackR = 0;
+        this.prevV = 0;
+        this.prevYaw = 0;
+      }
+      this.truckBlocked = true;
+    }
 
     // 7) 버킷과 흙
     const p1 = this.pose();
@@ -622,6 +678,20 @@ export class ExcavatorSim {
       }
     }
     return total;
+  }
+
+  /** 버킷(핀이나 날 끝)이 적재함 벽보다 낮은 채로 덤프트럭 자리에 들어가 있는가 */
+  private truckContact(p: Pose): boolean {
+    const truck = this.site.truck;
+    if (!truck) return false;
+    if (p.baseY + Math.min(p.tipY, p.wristY) - 0.15 >= truck.bedTop) return false;
+    const zn = this.site.dumpZone;
+    for (const r of [p.wristR, p.tipR]) {
+      const x = p.baseX + p.fwdX * r;
+      const z = p.baseZ + p.fwdZ * r;
+      if (x > zn.x0 - 0.2 && x < zn.x1 + 0.2 && z > zn.z0 - 0.2 && z < zn.z1 + 0.2) return true;
+    }
+    return false;
   }
 
   /** 버킷의 흙 vol을 (r, y) 아래 지면에 떨어뜨리고, 떨어진 곳에 따라 덤프/흘림으로 기록한다. */

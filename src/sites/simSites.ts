@@ -7,7 +7,7 @@ const NO_ZONE = { x0: 0, x1: 0, z0: 0, z1: 0 };
 export const TRUCK_YARD: Site = {
   ...TRAINING_YARD,
   name: '상차 작업장',
-  dumpZone: { x0: -7.6, x1: -4.6, z0: -1.3, z1: 1.3 },
+  dumpZone: { x0: -7.2, x1: -4.2, z0: -1.3, z1: 1.3 },
   truck: { bedTop: 1.9, capacity: 6 },
   scenery: 'construction',
 };

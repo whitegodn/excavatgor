@@ -23,7 +23,7 @@ export const SIM_RANKS: SimRank[] = [
   { level: 1, name: '신입', xp: 0 },
   { level: 2, name: '조수', xp: 140 },
   { level: 3, name: '기사', xp: 320 },
-  { level: 4, name: '반장', xp: 520 },
+  { level: 4, name: '반장', xp: 560 },
 ];
 
 export const SIM_LEVEL_NAMES: Record<number, string> = {
@@ -59,21 +59,30 @@ function driveScore(par: number, zero: number) {
   };
 }
 
-/** 상차 스테이지 채점: 적재량 40, 흘림 20, 시간 25, 안전 15 */
-function truckScore(par: number, limit: number) {
+/**
+ * 상차 스테이지 채점: 적재량 40, 흘림 20, 시간 25, 안전 15.
+ * spillZero: 흘린 양이 목표량의 이 배수가 되면 흘림 0점 (첫 상차 스테이지는 넉넉하게)
+ */
+function truckScore(par: number, limit: number, spillZero = 0.6) {
   return (m: Metrics): ScoreItem[] => {
     const all = m.loaded >= m.target;
     const outside = m.outside > 0.05 ? `, 노란 구역 밖에서 판 흙 ${m.outside.toFixed(2)}m³` : '';
     return [
-      scoreItem('load', '적재량', 40, ramp(m.loaded, m.target, m.target * 0.3), `트럭에 ${m.loaded.toFixed(2)} / ${m.target.toFixed(1)}m³`),
+      scoreItem(
+        'load',
+        '적재량',
+        40,
+        ramp(m.loaded, m.target, m.target * 0.3),
+        `트럭에 ${m.loaded.toFixed(2)} / ${m.target.toFixed(1)}m³${all ? '' : ' (목표의 30% 이하는 0점)'}`,
+      ),
       scoreItem(
         'clean',
         '흘림',
         20,
-        m.loaded < 0.05 ? 0 : ramp(m.spilled + m.returned + m.outside, 0.1 * m.target, 0.6 * m.target),
+        m.loaded < 0.05 ? 0 : ramp(m.spilled + m.returned + m.outside, 0.1 * m.target, spillZero * m.target),
         m.loaded < 0.05
           ? '실은 흙이 없어 0점'
-          : `트럭 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³${outside}`,
+          : `트럭 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³${outside} (합계 ${(0.1 * m.target).toFixed(2)}m³까지 만점, ${(spillZero * m.target).toFixed(2)}m³부터 0점)`,
       ),
       scoreItem(
         'time',
@@ -143,7 +152,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: FLAT_COURSE,
     create: () => new DriveObjective(FLAT_GATES, 2.5, 300),
-    score: driveScore(75, 220),
+    score: driveScore(75, 150),
   },
   {
     id: 'S1-2',
@@ -152,8 +161,9 @@ export const STAGES: TaskDef[] = [
     summary: '흙을 파서 왼쪽 덤프트럭에 1.2m³ 싣기',
     brief: [
       '노란 구역의 흙을 파서 왼쪽에 서 있는 덤프트럭에 1.2m³(버킷 서너 번)를 싣습니다.',
-      '적재함 벽은 높이 1.9m입니다. 버킷을 3.5m까지 든 다음에 트럭 위로 선회하세요. 낮게 넣으면 트럭에 부딪힙니다.',
-      '화면 위쪽 ①~⑦ 안내가 그대로 나옵니다. 트럭 위에서는 "지면 위" 높이가 적재함 윗면 기준으로 나옵니다.',
+      '적재함 벽은 높이 1.9m입니다. 오른쪽 과제 표시의 "버킷 높이"가 3.5m가 될 때까지 든 다음에 트럭 위로 선회하세요. 낮으면 트럭에 부딪혀 막힙니다.',
+      '암을 펴면 버킷이 앞으로 기울어 흙을 흘립니다. 버킷 입구가 "위"를 보게 오므린 뒤에 펴세요.',
+      '화면 위쪽 ①~⑦ 안내가 그대로 나옵니다. 트럭 위에서는 날 끝 높이가 "적재함 벽 위" 기준으로 나옵니다.',
     ],
     passText: TRUCK_PASS,
     coach: 'full',
@@ -161,7 +171,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: TRUCK_YARD,
     create: () => new TruckObjective(1.2, 300),
-    score: truckScore(120, 300),
+    score: truckScore(120, 300, 1.0),
   },
   {
     id: 'S2-1',
@@ -179,7 +189,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: HILL_COURSE,
     create: () => new DriveObjective(HILL_GATES, 2.5, 360, { slopes: true }),
-    score: driveScore(85, 260),
+    score: driveScore(85, 170),
   },
   {
     id: 'S2-2',
@@ -198,7 +208,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: HAUL_SITE,
     create: () => new HaulObjective(2, 480),
-    score: haulScore(220, 480),
+    score: haulScore(150, 330),
   },
   {
     id: 'S3-1',
@@ -216,7 +226,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: ROAD_COURSE,
     create: () => new DriveObjective(ROAD_GATES, 3, 420, { roadHalfWidth: 3.5 }),
-    score: driveScore(125, 320),
+    score: driveScore(125, 220),
   },
   {
     id: 'S3-2',
@@ -233,7 +243,7 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: TRUCK_YARD,
     create: () => new TruckObjective(3, 360),
-    score: truckScore(200, 360),
+    score: truckScore(160, 360),
   },
 ];
 

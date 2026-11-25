@@ -31,6 +31,9 @@ export class Coach {
   private spilled = 0;
   private bySwing = 0;
   private byTravel = 0;
+  private truckAt = 0;
+  private spillAt = 0;
+  private returnAt = 0;
   private returned = 0;
   private overflow = 0;
   private outside = 0;
@@ -45,6 +48,9 @@ export class Coach {
     this.spilled = 0;
     this.bySwing = 0;
     this.byTravel = 0;
+    this.truckAt = 0;
+    this.spillAt = 0;
+    this.returnAt = 0;
     this.returned = 0;
     this.overflow = 0;
     this.outside = 0;
@@ -110,15 +116,7 @@ export class Coach {
       this.reports = sim.reportCount;
       const r = sim.lastCycle!;
       if (truck) {
-        // 상차에서는 사이클 인정 여부를 따지지 않는다. 버킷 한 번의 결과만 알려 준다
-        if (r.dumped > 0.03) {
-          this.announce(
-            sim,
-            `버킷 한 번 완료 · 트럭에 ${r.dumped.toFixed(2)}m³ · 트럭 밖 ${r.spilled.toFixed(2)} · 들다가 떨어뜨림 ${r.returned.toFixed(2)}`,
-            'good',
-            7,
-          );
-        }
+        // 상차에서는 사이클 인정 여부를 따지지 않는다. 버킷 한 번의 결과는 아래에서 따로 알려 준다
       } else if (r.valid) {
         const parts = [
           `${r.time.toFixed(1)}초`,
@@ -131,6 +129,19 @@ export class Coach {
       } else if (r.fault !== '') {
         this.announce(sim, FAULT_TEXT[r.fault], 'warn', 7);
       }
+    }
+
+    // 상차: 버킷을 다 비울 때마다 이번 버킷의 결과를 알려 준다
+    if (truck && sim.truckLoad - this.truckAt > 0.03 && sim.load < 0.02) {
+      this.announce(
+        sim,
+        `버킷 한 번 완료 · 트럭에 ${(sim.truckLoad - this.truckAt).toFixed(2)}m³ (모두 ${sim.truckLoad.toFixed(2)}m³) · 트럭 밖 ${(sim.spilled - this.spillAt).toFixed(2)} · 들다가 떨어뜨림 ${(sim.returned - this.returnAt).toFixed(2)}`,
+        'good',
+        7,
+      );
+      this.truckAt = sim.truckLoad;
+      this.spillAt = sim.spilled;
+      this.returnAt = sim.returned;
     }
 
     // 급선회로 흘림
@@ -167,7 +178,7 @@ export class Coach {
         this.say(
           sim,
           'tilt',
-          `암을 펴다 버킷이 기울어 흙을 흘렸습니다. 붐을 올리면서 ${key('boomUp')} 펴거나 버킷을 조금 더 오므리세요 ${key('curl')}`,
+          `암을 펴다 버킷이 앞으로 기울어 흙을 흘렸습니다. 암을 펴기 전에 버킷 입구가 '위'를 보게 오므려 두세요 ${key('curl')}`,
         );
       } else {
         this.say(sim, 'tilt', `버킷이 기울어 구역 밖에 흙을 흘렸습니다. 입구가 위를 보게 맞추세요`);
@@ -203,7 +214,7 @@ export class Coach {
     }
     if (sim.overflow - this.overflow > 0.12) {
       if (b.fill > 0.9) {
-        this.say(sim, 'overflow', `버킷이 이미 가득 찼습니다. 더 긁지 말고 오므려서 ${key('curl')} 들어 올리세요 ${key('boomUp')}`);
+        this.say(sim, 'overflow', `버킷이 이미 가득 찼습니다. 더 긁지 말고 오므려서 ${key('curl')} 들어 올리세요 ${key('boomUp')}`, 'warn', 5, 8);
       }
       this.overflow = sim.overflow;
     }

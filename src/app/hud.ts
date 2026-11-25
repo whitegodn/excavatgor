@@ -443,7 +443,7 @@ export class Hud {
       ? h < -0.03
         ? `땅에 닿음 · 처음 지면보다 ${(-h).toFixed(2)} m 아래`
         : '땅에 닿음'
-      : `지면 위 ${Math.max(0, b.above).toFixed(2)} m`;
+      : `${sim.site.truck && b.zone === 'dump' ? '적재함 벽 위' : '지면 위'} ${Math.max(0, b.above).toFixed(2)} m`;
     el.roHeight.className = b.touching ? 'hot' : '';
     el.roFacing.textContent = b.facing;
     el.roFacing.className = b.fill > 0.08 && b.facing !== '위' ? 'hot' : b.facing === '위' ? 'fine' : '';

@@ -61,13 +61,28 @@ describe('덤프트럭 싣기', () => {
     expect(sim.terrain.heightAt((z.x0 + z.x1) / 2, 0)).toBeLessThan(0.05);
   });
 
-  it('적재함 벽보다 낮은 데서 쏟으면 트럭에 실리지 않는다', () => {
+  it('트럭은 단단하다: 낮게 들고 가면 벽에 막히고, 버킷은 적재함 벽 아래로 들어가지 못한다', () => {
     const sim = new ExcavatorSim(TRUCK_YARD);
-    // 보통 높이(2.4m)로 들고 가서 버킷을 펴면 입술이 적재함 벽보다 낮아진다
+    // 보통 높이(2.4m)로 들고 가서 버킷을 펴면 날 끝이 적재함 벽에 걸린다
     const pilot = new Autopilot(1, -90 * DEG, 2.4);
-    while (!pilot.done && sim.tick < 200 * SIM_HZ) sim.step(pilot.next(sim));
-    expect(sim.spilled).toBeGreaterThan(0.2);
-    expect(sim.truckLoad).toBeLessThan(sim.spilled);
+    const zn = TRUCK_YARD.dumpZone;
+    let blocked = 0;
+    let lowest = Number.POSITIVE_INFINITY;
+    while (!pilot.done && sim.tick < 60 * SIM_HZ) {
+      sim.step(pilot.next(sim));
+      if (sim.truckBlocked) blocked++;
+      const p = sim.pose();
+      for (const r of [p.wristR, p.tipR]) {
+        const x = p.baseX + p.fwdX * r;
+        const z = p.baseZ + p.fwdZ * r;
+        if (x > zn.x0 && x < zn.x1 && z > zn.z0 && z < zn.z1) lowest = Math.min(lowest, p.baseY + Math.min(p.tipY, p.wristY) - 0.15);
+      }
+    }
+    expect(blocked).toBeGreaterThan(0);
+    expect(lowest).toBeGreaterThanOrEqual(TRUCK_YARD.truck!.bedTop - 1e-6);
+    // 트럭 자리의 땅은 파이지 않는다
+    expect(sim.terrain.heightAt((zn.x0 + zn.x1) / 2, 0)).toBeGreaterThan(-0.01);
+    expect(sim.conservationError()).toBeLessThan(1);
   });
 
   it('S1-2: 높이 들고 실으면 합격, 낮게 넣으면 트럭 접촉으로 센다', () => {

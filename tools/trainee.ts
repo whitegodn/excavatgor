@@ -126,7 +126,7 @@ function describe(): string {
     ? b.tipY < -0.03
       ? `땅에 닿음 · 처음 지면보다 ${(-b.tipY).toFixed(2)}m 아래`
       : '땅에 닿음'
-    : `지면 위 ${Math.max(0, b.above).toFixed(2)}m`;
+    : `${sim.site.truck && b.zone === 'dump' ? '적재함 벽 위' : '지면 위'} ${Math.max(0, b.above).toFixed(2)}m`;
   const side = (deg: number) => `${deg < 0 ? '왼쪽' : '오른쪽'} ${Math.abs(deg).toFixed(0)}°`;
   const swing = sim.swing / DEG;
   const heading = sim.heading / DEG;

@@ -42,6 +42,9 @@ export class DriveObjective extends Objective {
   private steepTicks = 0;
   private steepQuietUntil = 0;
   private path: Checkpoint[] | null = null;
+  /** 지금 깃발에 가장 가까이 갔던 거리. 스쳐 지나갔는지 판단한다 */
+  private nearest = Number.POSITIVE_INFINITY;
+  private missWarned = false;
 
   constructor(
     readonly checkpoints: readonly Checkpoint[],
@@ -96,8 +99,19 @@ export class DriveObjective extends Objective {
         this.say('비탈을 비스듬히 타고 있어 아래쪽으로 미끄러집니다. 가파른 곳은 정면으로 오르내리세요', 'warn');
       }
     }
-    if (this.distance(sim) <= this.radius) {
+    const dist = this.distance(sim);
+    this.nearest = Math.min(this.nearest, dist);
+    if (!this.missWarned && this.nearest < this.radius + 2.5 && dist > this.nearest + 3) {
+      this.missWarned = true;
+      this.say(
+        `깃발을 ${this.nearest.toFixed(1)}m 옆으로 스쳐 지나갔습니다. ${this.radius}m 안으로 들어가야 통과입니다. 돌아가세요`,
+        'warn',
+      );
+    }
+    if (dist <= this.radius) {
       this.index++;
+      this.nearest = Number.POSITIVE_INFINITY;
+      this.missWarned = false;
       if (this.index >= this.checkpoints.length) {
         this.done = true;
         this.say('모든 깃발을 지났습니다');

@@ -22,7 +22,9 @@ export class HaulObjective extends CycleObjective {
     const dir =
       Math.abs(turn) < 10
         ? `정면 ${k('↑')}`
-        : `차체를 ${turn < 0 ? '왼쪽' : '오른쪽'}으로 ${Math.abs(turn).toFixed(0)}° ${turn < 0 ? k('←') : k('→')}`;
+        : Math.abs(turn) > 150
+          ? `바로 뒤쪽 · 후진 ${k('↓')}으로 가도 됩니다`
+          : `차체를 ${turn < 0 ? '왼쪽' : '오른쪽'}으로 ${Math.abs(turn).toFixed(0)}° ${turn < 0 ? k('←') : k('→')}`;
     return `${name}까지 ${dist.toFixed(0)}m · ${dir}`;
   }
 
@@ -36,9 +38,14 @@ export class HaulObjective extends CycleObjective {
         : `파란 구역에 닿는 거리입니다. 선회해서 버킷을 파란 구역 위로 옮겨 쏟으세요<small>${count}</small>`;
     }
     const back = this.way(sim, sim.site.digZone, '노란 구역');
-    return back
-      ? `${back}<small>노란 구역으로 돌아가 다음 흙을 담으세요 (${count})</small>`
-      : `노란 구역의 흙을 담으세요. 쏟을 곳(파란 구역)은 오른쪽으로 멀리 있습니다<small>${count} · 파란 구역 위에 뜬 공이 쏟을 자리입니다</small>`;
+    if (back) return `${back}<small>노란 구역으로 돌아가 다음 흙을 담으세요 (${count})</small>`;
+    // 노란 구역에 닿는 거리인데 버킷이 다른 쪽을 보고 있으면 선회 방향을 알려 준다
+    const z = sim.site.digZone;
+    const swing = wrapAngle(Math.atan2((z.x0 + z.x1) / 2 - sim.x, (z.z0 + z.z1) / 2 - sim.z) - (sim.heading + sim.swing)) / DEG;
+    if (Math.abs(swing) > 15) {
+      return `노란 구역에 닿는 거리입니다. ${swing < 0 ? `왼쪽으로 선회해(${k('A')})` : `오른쪽으로 선회해(${k('D')})`} 버킷을 노란 구역 위로 옮기세요 ${Math.abs(swing).toFixed(0)}°<small>${count}</small>`;
+    }
+    return `노란 구역의 흙을 담으세요. 담은 뒤에는 파란 구역까지 몰고 갑니다<small>${count} · 파란 구역 위에 뜬 공이 쏟을 자리입니다</small>`;
   }
 
   markers(sim: ExcavatorSim): Marker[] {

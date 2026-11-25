@@ -134,7 +134,8 @@ export function guideText(s: GuideState): string {
   const inDig = b.zone === 'dig';
   const inDump = b.zone === 'dump';
   // 절반 넘게 찼거나, 1/4 넘게 실은 채 굴착 구역을 떠났으면 "실어 나르는 중"으로 본다
-  const loaded = b.fill > 0.5 || (b.fill > 0.25 && !inDig);
+  // 1/4 넘게 담아 이미 높이 들었으면(1.2m) 다시 파라고 하지 않고 그대로 실어 나르게 한다
+  const loaded = b.fill > 0.5 || (b.fill > 0.25 && (!inDig || b.above > 1.2));
   // 버킷을 펴서 쏟기 시작했으면 버킷이 빌 때까지 "쏟기" 단계다
   const dumping = sim.dumpingStarted && b.fill > 0.03;
   const stuck = 1 - sim.soilResist >= 0.85 && b.touching;
@@ -151,11 +152,9 @@ export function guideText(s: GuideState): string {
     const reach = p.tipR < t.dist ? act('암을 펴서', 'armOut') : act('암을 당겨서', 'armIn');
     return { text: `${step} 방향은 맞습니다. ${reach} 버킷을 ${name} 위로 옮기세요`, reach: true };
   };
-  // 붐이 이미 끝까지 올라가 있으면 버킷을 오므려서 기우는 것을 막는 수밖에 없다
-  const reachNote =
-    sim.boom.stroke > 0.95
-      ? `암을 펴면 버킷이 앞으로 기웁니다. ${act('버킷을 조금씩 오므리면서', 'curl')} 천천히 펴세요`
-      : `암을 펴면 버킷이 내려가고 앞으로 기웁니다. ${act('붐을 올리면서', 'boomUp')} 하고, 기울면 ${act('버킷을 조금 오므리세요', 'curl')}`;
+  const reachNote = `암을 펴면 버킷이 앞으로 기웁니다. ${act('버킷을 조금씩 오므리면서', 'curl')} 천천히 펴세요${
+    sim.boom.stroke > 0.95 ? '' : `. 버킷이 낮아지면 ${act('붐을 올리세요', 'boomUp')}`
+  }`;
 
   // ── ⑦ 복귀 ──
   if (!dumping && (sim.awaitingReturn || (!loaded && !inDig))) {
@@ -257,13 +256,20 @@ export function guideText(s: GuideState): string {
     if (pin < need) {
       return line(
         `④ ${act('붐을 올리세요', 'boomUp')} <small class="inline">버킷 높이 ${(Math.floor(pin * 10) / 10).toFixed(1)}m → ${need.toFixed(1)}m 이상</small>`,
-        `적재함 벽(${truck.bedTop}m)보다 넉넉히 높아야 부딪히지 않고 버킷을 펼 자리도 생깁니다. 다 올린 뒤에 선회하세요. 기울면 ${act('조금 더 오므리세요', 'curl')}`,
+        `"버킷 높이"는 오른쪽 과제 표시에 나옵니다(버킷이 달린 핀의 높이). 적재함 벽(${truck.bedTop}m)보다 넉넉히 높아야 부딪히지 않고 버킷을 펼 자리도 생깁니다. 다 올린 뒤에 선회하세요`,
       );
     }
   } else if (b.above < 1.5) {
     return line(
       `④ ${act('붐을 올리세요', 'boomUp')}`,
       `붐을 올리면 버킷이 앞으로 기웁니다. 기울면 ${act('조금 더 오므리세요', 'curl')}`,
+    );
+  }
+  // 붐을 올리는 동안 버킷이 앞으로 기운다. 그대로 선회하거나 암을 펴면 흘리므로 먼저 바로잡게 한다
+  if (b.openUp < FACING_UP - 6 && sim.bucket.stroke < 0.97) {
+    return line(
+      `⑤ 옮기기 전에 ${act('버킷을 조금 더 오므려', 'curl')} 입구가 '위'를 보게 하세요`,
+      `지금: ${b.facing}. 붐을 올리는 동안 버킷이 앞으로 기울었습니다. 이대로 선회하거나 암을 펴면 흙을 흘립니다`,
     );
   }
   const go = goTo(sim.site.dumpZone, dumpName, '⑤', ' 위로 가세요');
