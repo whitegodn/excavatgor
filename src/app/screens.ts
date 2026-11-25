@@ -2,6 +2,7 @@ import type { LeverPattern } from '../core/input/levers';
 import type { Score } from '../core/scoring/score';
 import type { Progress, TaskRecord } from '../curriculum/progress';
 import type { LevelDef, QuizQuestion, TaskDef } from '../curriculum/task';
+import type { CycleReport } from '../equipment/excavator/excavatorSim';
 
 export type ScreenAction =
   | { act: 'task'; id: string }
@@ -16,6 +17,29 @@ export type ScreenAction =
   | { act: 'quizDone'; correct: number; total: number };
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;');
+
+/** 결과 화면에 덧붙이는 기록: 과제 중 나온 실수 알림, 사이클별 결과 */
+export interface ResultExtra {
+  notes: string[];
+  cycles: CycleReport[];
+}
+
+const FAULT_LABEL: Record<string, string> = {
+  returned: '세지 않음 · 담은 흙을 도로 떨어뜨림',
+  none: '세지 않음 · 파란 구역에 거의 못 쏟음',
+  spill: '세지 않음 · 구역 밖에 많이 흘림',
+  source: '세지 않음 · 노란 구역 밖에서 팜',
+};
+
+/** 퀴즈를 풀 때마다 보기 순서를 섞는다 (정답 자리를 외워서 푸는 것을 막는다) */
+function shuffled(q: QuizQuestion): QuizQuestion {
+  const order = q.choices.map((_, i) => i);
+  for (let i = order.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [order[i], order[j]] = [order[j], order[i]];
+  }
+  return { ...q, choices: order.map((i) => q.choices[i]), answer: order.indexOf(q.answer) };
+}
 
 /**
  * 장비 화면 위에 덮는 화면들: 과정 메뉴, 과제 설명, 퀴즈, 일시 정지, 결과.
@@ -98,7 +122,7 @@ export class Screens {
           const rec = progress.get(t.id);
           const unlocked = progress.isUnlocked(t.id);
           const state = rec?.passed ? 'passed' : unlocked ? 'open' : 'locked';
-          const mark = rec?.passed ? `통과 · 최고 ${rec.best}점` : rec ? `최고 ${rec.best}점` : unlocked ? '새 과제' : '잠김';
+          const mark = rec?.passed ? `통과 · 최고 ${rec.best}점` : rec ? `최고 ${rec.best}점` : unlocked ? '새 과제' : '잠김 · 앞 과제를 통과하면 열림';
           html += `
             <button class="task ${state}" data-act="task" data-id="${t.id}" ${unlocked ? '' : 'disabled'}
               ${next?.id === t.id ? 'data-primary' : ''}>
@@ -144,7 +168,7 @@ export class Screens {
 
   // ── 퀴즈 ──
   startQuiz(task: TaskDef): void {
-    this.quiz = { questions: task.quiz!, index: 0, correct: 0, answered: null };
+    this.quiz = { questions: task.quiz!.map(shuffled), index: 0, correct: 0, answered: null };
     this.renderQuiz(task.title);
   }
 
@@ -208,7 +232,33 @@ export class Screens {
   }
 
   // ── 결과 ──
-  result(task: TaskDef, score: Score, record: TaskRecord, next: TaskDef | null, newBadge: string | null): void {
+  result(
+    task: TaskDef,
+    score: Score,
+    record: TaskRecord,
+    next: TaskDef | null,
+    newBadge: string | null,
+    extra: ResultExtra = { notes: [], cycles: [] },
+  ): void {
+    const cycles = extra.cycles.length
+      ? `<h2>사이클별 기록</h2>
+        <table class="score cycles">
+          <tr><th>#</th><th>결과</th><th>시간</th><th>쏟음</th><th>구역 밖</th><th>떨어뜨림</th></tr>
+          ${extra.cycles
+            .map(
+              (c, i) => `<tr class="${c.valid ? '' : 'bad'}">
+                <td>${i + 1}</td>
+                <td>${c.valid ? '인정' : (FAULT_LABEL[c.fault] ?? '세지 않음')}</td>
+                <td>${c.valid ? `${c.time.toFixed(1)}초` : '—'}</td>
+                <td>${c.dumped.toFixed(2)}</td><td>${c.spilled.toFixed(2)}</td><td>${c.returned.toFixed(2)}</td>
+              </tr>`,
+            )
+            .join('')}
+        </table>`
+      : '';
+    const notes = extra.notes.length
+      ? `<h2>과제 중 나온 실수 알림</h2><ul class="notes">${extra.notes.map((n) => `<li>${esc(n)}</li>`).join('')}</ul>`
+      : '';
     const verdict = score.pass ? '합격' : score.fatal ? '실격' : '불합격';
     this.show(`
       <p class="sub">레벨 ${task.level} · ${task.id} · ${esc(task.title)}${task.provisional ? ' · <em>임시 규격</em>' : ''}</p>
@@ -228,6 +278,8 @@ export class Screens {
           )
           .join('')}
       </table>
+      ${cycles}
+      ${notes}
       <p class="sub">내 기록: 최고 ${record.best}점 · ${record.attempts}번 시도</p>
       ${newBadge ? `<p class="why right"><b>등급 획득!</b> ${esc(newBadge)}</p>` : ''}
       <footer>

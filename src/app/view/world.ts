@@ -242,8 +242,8 @@ export class World {
         active: make('mkActive', 1, 0.82, 0.15, 0.5),
         todo: make('mkTodo', 1, 1, 1, 0.16),
         done: make('mkDone', 0.3, 0.9, 0.45, 0.12),
-        pole: make('mkPole', 0.95, 0.2, 0.15, 1),
-        rope: make('mkRope', 1, 0.95, 0.9, 1),
+        pole: make('mkPole', 1, 0.1, 0.55, 1),
+        rope: make('mkRope', 1, 0.1, 0.55, 1),
       };
     }
     return this.markerMats[state];
@@ -277,7 +277,7 @@ export class World {
             [m.x1, m.z1],
             [m.x2, m.z2],
           ]) {
-            const pole = MeshBuilder.CreateCylinder('pole', { height: m.height + 0.3, diameter: 0.12 }, this.scene);
+            const pole = MeshBuilder.CreateCylinder('pole', { height: m.height + 0.3, diameter: 0.22 }, this.scene);
             pole.position.set(x, (m.height + 0.3) / 2, z);
             pole.material = this.markerMaterial('pole');
             pole.isPickable = false;
@@ -285,7 +285,7 @@ export class World {
           }
           const rope = MeshBuilder.CreateTube(
             'rope',
-            { path: [new Vector3(m.x1, m.height, m.z1), new Vector3(m.x2, m.height, m.z2)], radius: 0.06 },
+            { path: [new Vector3(m.x1, m.height, m.z1), new Vector3(m.x2, m.height, m.z2)], radius: 0.1 },
             this.scene,
           );
           rope.material = this.markerMaterial('rope');

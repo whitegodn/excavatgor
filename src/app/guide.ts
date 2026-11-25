@@ -135,7 +135,9 @@ export function guideText(s: GuideState): string {
   /** 구역 쪽으로 선회하거나, 방향이 맞으면 암으로 거리를 맞추게 한다 */
   const goTo = (zone: Zone, name: string, step: string, arrive: string): { text: string; reach: boolean } => {
     const t = turnToward(sim, zone);
-    if (t.off > 12) return { text: `${step} ${act(`${t.word}으로 선회해`, t.fn)} ${name}${arrive}`, reach: false };
+    if (t.off > 12) {
+      return { text: `${step} ${act(`${t.word}으로 선회해`, t.fn)} ${name}${arrive} <small class="inline">${t.off.toFixed(0)}° 남음</small>`, reach: false };
+    }
     const reach = p.tipR < t.dist ? act('암을 펴서', 'armOut') : act('암을 당겨서', 'armIn');
     return { text: `${step} 방향은 맞습니다. ${reach} 버킷을 ${name} 위로 옮기세요`, reach: true };
   };
@@ -241,6 +243,6 @@ export function guideText(s: GuideState): string {
     go.text,
     go.reach
       ? reachNote
-      : `선회는 키를 놓아도 20°쯤 더 돕니다. 미리 놓고, 마지막은 ${kbd('Shift')}를 누른 채 맞추면 바로 멈춥니다`,
+      : `선회는 키를 놓아도 10~20° 더 돕니다. 미리 놓고, 마지막은 ${kbd('Shift')}를 누른 채 맞추면 바로 멈춥니다`,
   );
 }

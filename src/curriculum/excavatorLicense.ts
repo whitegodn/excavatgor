@@ -19,66 +19,73 @@ const READY = { boom: 30 * DEG, arm: -90 * DEG, bucket: -60 * DEG };
 
 const kb = (fn: Parameters<typeof keyFor>[0], p: LeverPattern) => `<kbd>${keyFor(fn, p)}</kbd>`;
 
-/** 목표 지점 과제의 채점: 목표 달성 50, 시간 30, 안전 20 */
+/** 목표 지점 과제의 채점: 목표 달성 50, 시간 30, 안전 20. 벨트 없이 움직이면 점수와 상관없이 실격이다 */
 function targetScore(par: number) {
+  const zero = par * 2.5;
   return (m: Metrics): ScoreItem[] => {
     const all = m.completed >= m.total;
-    const safety = 20 - 10 * m.belt - 5 * m.groundTouches;
     return [
       scoreItem('targets', '목표 달성', 50, m.completed / m.total, `${m.completed} / ${m.total}개 통과`),
       scoreItem(
         'time',
         '시간',
         30,
-        all ? ramp(m.time, par, par * 2.5) : 0,
-        all ? `${m.time.toFixed(1)}초 (만점 기준 ${par}초 이내)` : '목표를 다 통과하지 못해 0점',
+        all ? ramp(m.time, par, zero) : 0,
+        all ? `${m.time.toFixed(1)}초 (${par}초 이내 만점, ${zero}초부터 0점)` : '목표를 다 통과하지 못해 0점',
       ),
       scoreItem(
         'safety',
         '안전',
         20,
-        safety / 20,
-        m.belt + m.groundTouches === 0
-          ? '위반 없음'
-          : `벨트 미착용 ${m.belt}회, 땅에 닿음 ${m.groundTouches}회`,
+        m.belt > 0 ? 0 : (20 - 5 * m.groundTouches) / 20,
+        m.belt > 0 ? '안전벨트 미착용' : m.groundTouches === 0 ? '위반 없음' : `땅에 닿음 ${m.groundTouches}회 (1회 5점)`,
       ),
     ];
   };
 }
 
 /** 굴착 사이클 과제의 채점: 작업량 40, 흘림 20, 시간 25, 안전 15 */
-function cycleScore(par: number, limit: number) {
+function cycleScore(par: number, limit: number, hurdle = false) {
   return (m: Metrics): ScoreItem[] => {
     const all = m.cycles >= m.target;
-    const safety = 15 - 10 * m.belt - 5 * m.hurdleHits;
+    const skipped = m.uncounted > 0 ? `, 세지 않은 사이클 ${m.uncounted}회의 흙은 제외` : '';
     return [
       scoreItem(
         'work',
         '작업량',
         40,
         ramp(m.dumped, m.target * 0.5, m.target * 0.15),
-        `파란 구역에 ${m.dumped.toFixed(2)}m³ (만점 기준 ${(m.target * 0.5).toFixed(1)}m³), ${m.cycles}/${m.target}사이클`,
+        `인정된 ${m.cycles}/${m.target}사이클로 파란 구역에 ${m.dumped.toFixed(2)}m³ (${(m.target * 0.5).toFixed(1)}m³ 이상 만점)${skipped}`,
       ),
       scoreItem(
         'clean',
         '흘림',
         20,
-        ramp(m.spilled + m.returned, 0.05 * m.target, 0.3 * m.target),
-        `구역 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³`,
+        // 쏟은 것이 없으면 흘리지 않았다고 점수를 주지 않는다
+        m.dumped < 0.05 ? 0 : ramp(m.spilled + m.returned, 0.05 * m.target, 0.3 * m.target),
+        m.dumped < 0.05
+          ? '쏟은 흙이 없어 0점'
+          : `구역 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³ (합계 ${(0.3 * m.target).toFixed(1)}m³부터 0점)`,
       ),
       scoreItem(
         'time',
         '시간',
         25,
         all ? ramp(m.time, par, limit) : 0,
-        all ? `${m.time.toFixed(1)}초 (만점 기준 ${par}초 이내)` : '사이클을 다 채우지 못해 0점',
+        all ? `${m.time.toFixed(1)}초 (${par}초 이내 만점, ${limit}초부터 0점)` : '사이클을 다 채우지 못해 0점',
       ),
       scoreItem(
         'safety',
         '안전',
         15,
-        safety / 15,
-        m.belt + m.hurdleHits === 0 ? '위반 없음' : `벨트 미착용 ${m.belt}회, 장애물 접촉 ${m.hurdleHits}회`,
+        m.belt > 0 ? 0 : (15 - 5 * m.hurdleHits) / 15,
+        m.belt > 0
+          ? '안전벨트 미착용'
+          : hurdle
+            ? m.hurdleHits === 0
+              ? '장애물 접촉 없음'
+              : `장애물 접촉 ${m.hurdleHits}회 (1회 5점)`
+            : '위반 없음',
       ),
     ];
   };
@@ -99,7 +106,7 @@ function targetTask(
     title,
     summary,
     brief,
-    passText: '60점 이상. 목표를 모두 통과해야 시간 점수를 받습니다.',
+    passText: '60점 이상. 목표를 모두 통과해야 시간 점수를 받습니다. 안전벨트 없이 움직이면 실격.',
     coach: opts.coach,
     timeLimit: opts.limit,
     passScore: 60,
@@ -147,13 +154,13 @@ export const TASKS: TaskDef[] = [
     quiz: [
       {
         q: '"붐"은 굴착기의 어느 부분입니까?',
-        choices: ['흙을 담는 바가지', '차체에 붙은 굵은 팔', '붐 끝에 달린 가는 팔', '차체 아래의 궤도'],
+        choices: ['흙을 담는 바가지', '차체에 붙은 굵은 팔', '굵은 팔 끝에 달린 가는 팔', '차체 아래의 궤도'],
         answer: 1,
         why: '붐은 차체에 붙은 굵은 팔입니다. 그 끝에 가는 팔인 "암"이, 암 끝에 "버킷"이 달려 있습니다.',
       },
       {
         q: '흙을 담는 바가지의 이름은 무엇입니까?',
-        choices: ['암', '붐', '버킷', '선회'],
+        choices: ['암', '붐', '버킷', '궤도'],
         answer: 2,
         why: '버킷입니다. 오므리면 흙을 담고, 펴면 쏟습니다.',
       },
@@ -287,19 +294,21 @@ export const TASKS: TaskDef[] = [
   {
     id: 'L3-1',
     level: 3,
-    title: '한 사이클',
-    summary: '안내를 따라 굴착 → 선회 → 쏟기 한 번',
+    title: '안내 따라 2사이클',
+    summary: '안내를 따라 굴착 → 선회 → 쏟기를 두 번',
     brief: [
-      '노란 구역의 흙을 파서 파란 구역에 쏟고, 노란 구역으로 돌아오면 한 사이클입니다.',
+      '노란 구역의 흙을 파서 파란 구역에 쏟고, 노란 구역으로 돌아오면 한 사이클입니다. 두 번 합니다.',
       '화면 위쪽의 ①~⑦ 안내를 따라 하세요. 실수하면 이유를 알려 줍니다.',
+      '두 번째는 쏟고 돌아온 자세에서 다시 시작합니다. 같은 자리가 깊어지면 조금 옆으로 옮겨 파세요.',
+      '레벨 1·2와 달리 여기서는 땅을 팝니다. 버킷 입구 방향(위/옆)은 왼쪽 "자세" 칸에서 확인하세요.',
     ],
-    passText: '60점 이상. 작업량 40, 흘림 20, 시간 25, 안전 15.',
+    passText: '60점 이상. 작업량 40, 흘림 20, 시간 25, 안전 15. 안전벨트 없이 움직이면 실격.',
     coach: 'full',
-    timeLimit: 180,
+    timeLimit: 300,
     passScore: 60,
     site: TRAINING_YARD,
-    create: () => new CycleObjective(1, 180),
-    score: cycleScore(30, 120),
+    create: () => new CycleObjective(2, 300),
+    score: cycleScore(90, 300),
   },
   {
     id: 'L3-2',
@@ -308,15 +317,16 @@ export const TASKS: TaskDef[] = [
     summary: '단계 안내 없이 세 번 이어서',
     brief: [
       '단계 안내 없이 3사이클을 이어서 합니다. 실수 알림은 나옵니다.',
-      '같은 자리만 파면 깊어져 담기 어렵습니다. 조금씩 옆으로 옮겨 파세요. 제한 시간은 3분입니다.',
+      '같은 자리만 파면 깊어져 담기 어렵습니다. 좌우로 10°쯤씩 옮겨 파세요. 노란 구역을 벗어나 판 흙은 사이클로 세지 않습니다.',
+      '버킷 입구 방향과 날 끝 높이는 왼쪽 "자세" 칸에 나옵니다. 제한 시간은 4분입니다.',
     ],
-    passText: '60점 이상. 만점 기준: 1.5m³ 이상을 90초 안에.',
+    passText: '60점 이상. 만점 기준: 1.5m³ 이상을 110초 안에. 안전벨트 없이 움직이면 실격.',
     coach: 'notices',
-    timeLimit: 180,
+    timeLimit: 240,
     passScore: 60,
     site: TRAINING_YARD,
-    create: () => new CycleObjective(3, 180),
-    score: cycleScore(90, 180),
+    create: () => new CycleObjective(3, 240),
+    score: cycleScore(110, 240),
   },
   {
     id: 'L3-3',
@@ -325,18 +335,18 @@ export const TASKS: TaskDef[] = [
     summary: '선회 경로의 줄을 넘겨 4사이클, 도움 없음',
     brief: [
       '굴착 구역과 덤프 구역 사이에 높이 1.3m의 줄이 있습니다. 버킷을 줄보다 높이 들고 선회해야 합니다.',
-      '4사이클을 4분 안에 합니다. 안내와 실수 알림이 없습니다.',
+      '4사이클을 4분 안에 합니다. 단계 안내와 실수 알림이 없고, 줄에 닿았을 때만 알려 줍니다. 결과 화면에서 사이클별 기록과 실수를 볼 수 있습니다.',
       '줄에 닿으면 감점이고, 3번 닿으면 실격입니다.',
       '※ 줄 높이, 시간, 횟수, 감점·실격 기준은 공식 시험 규격을 확인하기 전의 임시 값입니다.',
     ],
-    passText: '60점 이상. 장애물에 3번 닿으면 실격.',
+    passText: '60점 이상. 장애물에 3번 닿거나 안전벨트 없이 움직이면 실격.',
     coach: 'none',
     timeLimit: 240,
     passScore: 60,
     provisional: true,
     site: TRAINING_YARD,
     create: () => new CycleObjective(4, 240, PROVISIONAL_HURDLE),
-    score: cycleScore(130, 240),
+    score: cycleScore(130, 240, true),
   },
 ];
 

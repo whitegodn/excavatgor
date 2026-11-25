@@ -1191,3 +1191,47 @@ body.screen-open #hud {
 #screen table.score .pts.low {
   color: var(--bad);
 }
+
+/* 안내문 큰 글씨 옆에 붙는 짧은 수치 (남은 각도 등) */
+#prompt small.inline {
+  display: inline;
+  margin-left: 6px;
+  color: var(--accent);
+  font-weight: 600;
+}
+/* 장애물 줄 */
+#side .hurdle,
+#top .hurdle {
+  stroke: #ff3d9a;
+  stroke-width: 2.5;
+  stroke-dasharray: 7 4;
+}
+#top .hurdle {
+  stroke-dasharray: none;
+  stroke-width: 3;
+}
+#side .hurdleT {
+  font-size: 11px;
+  fill: #ff8ac4;
+  font-weight: 700;
+}
+/* 결과 화면: 사이클별 기록, 실수 알림 모음 */
+#screen table.cycles th {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+}
+#screen table.cycles td {
+  font-variant-numeric: tabular-nums;
+}
+#screen table.cycles tr.bad td {
+  color: #ffb3aa;
+}
+#screen .notes {
+  margin: 0 0 10px;
+  padding-left: 20px;
+  font-size: 14px;
+}
+#screen .notes li {
+  margin: 3px 0;
+}

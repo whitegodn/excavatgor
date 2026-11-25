@@ -14,6 +14,7 @@ import { finalize, type Score, scoreItem } from '../core/scoring/score';
 import { type Command, DT, SIM_HZ } from '../core/sim/command';
 import { clamp } from '../core/sim/math';
 import { LEVELS, taskById, TASKS } from '../curriculum/excavatorLicense';
+import { CycleObjective } from '../curriculum/objectives/cycleObjective';
 import { Progress } from '../curriculum/progress';
 import type { Objective, TaskDef } from '../curriculum/task';
 import { Autopilot } from '../equipment/excavator/autopilot';
@@ -22,7 +23,7 @@ import { TRAINING_YARD } from '../sites/site';
 import { Coach } from './coach';
 import { Hud } from './hud';
 import { promptFor } from './prompt';
-import { type ScreenAction, Screens } from './screens';
+import { type ResultExtra, type ScreenAction, Screens } from './screens';
 import { World } from './view/world';
 
 function safeStorage(): Storage | null {
@@ -103,12 +104,14 @@ function begin(t: TaskDef | null): void {
   log = [];
   verify = '—';
   coach.reset();
+  // 도움 없는 과제(시험 방식)에서는 코치가 화면에 말하지 않고 기록만 한다. 기록은 결과 화면에 나온다
+  coach.muted = t?.coach === 'none';
   world.setSim(sim);
   mode = 'play';
   screens.hide();
 }
 
-function showResult(score: Score): void {
+function showResult(score: Score, extra?: ResultExtra): void {
   const t = task!;
   const before = progress.badge();
   progress.record(t.id, score);
@@ -116,13 +119,16 @@ function showResult(score: Score): void {
   const i = TASKS.indexOf(t);
   const next = i + 1 < TASKS.length && progress.isUnlocked(TASKS[i + 1].id) ? TASKS[i + 1] : null;
   mode = 'result';
-  screens.result(t, score, progress.get(t.id)!, next, !before && after ? `${after.tier} 등급 "${after.name}"을 얻었습니다` : null);
+  screens.result(t, score, progress.get(t.id)!, next, !before && after ? `${after.tier} 등급 "${after.name}"을 얻었습니다` : null, extra);
 }
 
 function finishTask(): void {
   const t = task!;
   const o = objective!;
-  showResult(finalize(t.score!(o.metrics(sim), o), o.fatal, t.passScore));
+  showResult(finalize(t.score!(o.metrics(sim), o), o.fatal, t.passScore), {
+    notes: [...coach.log].map(([text, n]) => (n > 1 ? `${text} (${n}번)` : text)),
+    cycles: o instanceof CycleObjective ? o.reports : [],
+  });
 }
 
 screens.onAction = (a: ScreenAction) => {
@@ -297,8 +303,8 @@ function tick(): void {
     if (demo.done) endDemo();
     return;
   }
-  // 도움 없는 과제(시험 방식)에서는 코치가 말하지 않는다
-  if (!task || task.coach !== 'none') coach.update(sim, cmd, pattern);
+  // 굴착 코치는 자유 연습과 굴착 과제에서만 쓴다. 공중 조작·절차 과제에는 맞지 않는 조언이다
+  if (!task || objective instanceof CycleObjective) coach.update(sim, cmd, pattern);
   else coach.expire(sim);
   if (objective) {
     objective.update(sim, cmd);
@@ -370,6 +376,7 @@ function draw(): void {
           }
         : null,
     focus: objective ? objective.focus() : null,
+    hurdle: objective instanceof CycleObjective ? objective.hurdle : null,
     fps,
     verify,
   });

@@ -118,12 +118,15 @@ describe('공중 조작 과제 (L1, L2)', () => {
     expect(result.pass).toBe(true);
   });
 
-  it('안전벨트 없이 하면 안전 점수가 깎인다', () => {
+  it('안전벨트 없이 장비를 움직이면 목표를 다 통과해도 실격이다', () => {
     const { task, sim, objective } = begin('L1-1');
     driveTargets(sim, objective as TargetObjective, false);
-    const safety = score(task, sim, objective).items.find((it) => it.id === 'safety')!;
+    const result = score(task, sim, objective);
     expect(objective.beltViolations).toBe(1);
-    expect(safety.points).toBe(10);
+    expect(result.items[0].points).toBe(50);
+    expect(result.items.find((it) => it.id === 'safety')!.points).toBe(0);
+    expect(result.fatal).not.toBeNull();
+    expect(result.pass).toBe(false);
   });
 
   it('아무것도 하지 않으면 제한 시간에 끝나고 불합격이다', () => {
@@ -149,8 +152,8 @@ describe('굴착 사이클 과제 (L3)', () => {
     return { task, sim, objective, result: score(task, sim, objective) };
   }
 
-  it('L3-1: 시범 운전 한 사이클이면 합격', () => {
-    const r = runPilot('L3-1', new Autopilot(1));
+  it('L3-1: 시범 운전 2사이클이면 합격', () => {
+    const r = runPilot('L3-1', new Autopilot(2));
     expect(r.objective.done).toBe(true);
     expect(r.result.pass).toBe(true);
     expect(r.result.total).toBeGreaterThan(85);
@@ -160,6 +163,29 @@ describe('굴착 사이클 과제 (L3)', () => {
     const r = runPilot('L3-2', new Autopilot(3));
     expect(r.sim.cycles).toBe(3);
     expect(r.result.pass).toBe(true);
+    // 사이클마다의 기록이 남고, 작업량은 인정된 사이클의 흙만 센다
+    const o = r.objective as CycleObjective;
+    expect(o.reports.length).toBe(3);
+    expect(o.metrics(r.sim).dumped).toBeCloseTo(r.sim.dumped, 6);
+  });
+
+  it('세지 않은 사이클의 흙은 작업량에 넣지 않고, 쏟은 것이 없으면 흘림 점수도 없다', () => {
+    const task = taskById('L3-2')!;
+    const sim = new ExcavatorSim(task.site);
+    const objective = task.create!(sim) as CycleObjective;
+    // 덤프 구역의 반대쪽에 쏟는 시범 운전: 사이클로 인정되지 않는다
+    const pilot = new Autopilot(1, 90 * DEG);
+    while (!pilot.done && sim.tick < 120 * SIM_HZ) {
+      const cmd = pilot.next(sim);
+      sim.step(cmd);
+      objective.update(sim, cmd);
+    }
+    const m = objective.metrics(sim);
+    expect(m.uncounted).toBe(1);
+    expect(m.dumped).toBe(0);
+    const items = task.score!(m, objective);
+    expect(items.find((it) => it.id === 'work')!.points).toBe(0);
+    expect(items.find((it) => it.id === 'clean')!.points).toBe(0);
   });
 
   it('L3-3: 버킷을 높이 들고 선회하면 장애물에 닿지 않고 합격', () => {
@@ -230,10 +256,14 @@ describe('절차 과제 (L0-2)', () => {
     const { task, sim, objective } = begin('L0-2');
     const o = objective as ProcedureObjective;
     const off = idleCommand();
-    run(o, sim, off, 0.1);
+    // 과제가 시작되자마자(첫 틱에) 시동을 걸어도 잡아낸다
     run(o, sim, { ...off, engineOn: true }, 0.2);
     run(o, sim, { ...off, engineOn: true, locked: false }, 0.2);
     expect(o.mistakes).toBe(2);
+    // 벨트 없이 레버를 움직인 것도 순서 실수다 (실격은 아니다)
+    run(o, sim, { ...off, engineOn: true, locked: false, boom: 1 }, 0.3);
+    expect(o.mistakes).toBe(3);
+    expect(o.fatal).toBeNull();
     expect(score(task, sim, objective).pass).toBe(false);
   });
 });

@@ -23,6 +23,7 @@ import { finalize } from '../src/core/scoring/score';
 import { DT } from '../src/core/sim/command';
 import { clamp, DEG } from '../src/core/sim/math';
 import { LEVELS, taskById, TASKS } from '../src/curriculum/excavatorLicense';
+import { CycleObjective } from '../src/curriculum/objectives/cycleObjective';
 import { ExcavatorSim } from '../src/equipment/excavator/excavatorSim';
 import { TRAINING_YARD } from '../src/sites/site';
 
@@ -79,6 +80,8 @@ const sim = new ExcavatorSim(task?.site ?? TRAINING_YARD, undefined, task?.start
 const objective = task?.create?.(sim) ?? null;
 const ramp = new LeverRamp();
 const coach = new Coach();
+// 앱과 같게: 도움 없는 과제에서는 코치가 화면에 말하지 않고 기록만 한다
+coach.muted = task?.coach === 'none';
 const switches = { engineOn: false, locked: true, rpm: 8, belt: false, horn: false };
 let pattern: LeverPattern = 'ISO';
 /** 한 단계 동안 화면에 떴던 알림과, 가장 컸던 동시 조작 감속 */
@@ -94,8 +97,8 @@ function run(keys: Set<string>, seconds: number, horn = false): void {
     const cmd = leversToCommand(ramp.axes, pattern, switches);
     sim.step(cmd);
     const before = coach.notice?.text;
-    // 앱과 같게: 도움 없는 과제에서는 코치가 말하지 않는다
-    if (!task || task.coach !== 'none') coach.update(sim, cmd, pattern);
+    // 앱과 같게: 굴착 코치는 자유 연습과 굴착 과제에서만 쓴다
+    if (!task || objective instanceof CycleObjective) coach.update(sim, cmd, pattern);
     else coach.expire(sim);
     const now = coach.notice?.text;
     if (now && now !== before) notices.push(now);
@@ -225,6 +228,16 @@ if (task && objective) {
     console.log(`\n===== 결과: ${score.pass ? '합격' : score.fatal ? '실격' : '불합격'} · ${score.total}점 / 100 (합격선 ${score.passScore}점) =====`);
     if (score.fatal) console.log(`  실격 사유: ${score.fatal}`);
     for (const it of score.items) console.log(`  ${it.label}: ${it.points} / ${it.max} — ${it.detail}`);
+    if (objective instanceof CycleObjective && objective.reports.length) {
+      console.log('  [사이클별 기록]');
+      objective.reports.forEach((c, i) =>
+        console.log(`    ${i + 1}. ${c.valid ? `인정 ${c.time.toFixed(1)}초` : `세지 않음(${c.fault})`} · 쏟음 ${c.dumped.toFixed(2)} · 구역 밖 ${c.spilled.toFixed(2)} · 떨어뜨림 ${c.returned.toFixed(2)}`),
+      );
+    }
+    if (coach.log.size) {
+      console.log('  [과제 중 나온 실수 알림]');
+      for (const [text, n] of coach.log) console.log(`    - ${text}${n > 1 ? ` (${n}번)` : ''}`);
+    }
   } else {
     console.log('\n(과제가 아직 끝나지 않았습니다. 순서를 이어 붙여 계속하세요)');
   }

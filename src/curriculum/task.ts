@@ -51,6 +51,8 @@ export abstract class Objective {
   /** 시동을 걸고 안전레버를 푼 상태로 보낸 시간(틱). 과제 시간은 이것으로 잰다 */
   activeTicks = 0;
   beltViolations = 0;
+  /** 벨트 없이 장비를 움직이면 실격인가. 절차 과제는 실격 대신 순서 실수로 센다 */
+  protected beltIsFatal = true;
 
   constructor(readonly timeLimit: number | null) {}
 
@@ -66,7 +68,12 @@ export abstract class Objective {
       this.activeTicks++;
       if (!cmd.belt && anyLever(cmd) && this.beltViolations === 0) {
         this.beltViolations = 1;
-        this.say('안전벨트를 매지 않고 장비를 움직였습니다 (감점)', 'warn');
+        if (this.beltIsFatal) {
+          this.fatal = '안전벨트를 매지 않고 장비를 움직였습니다';
+          this.say('안전벨트를 매지 않고 장비를 움직였습니다. 이 시도는 실격입니다 (Backspace로 다시 시작)', 'warn');
+        } else {
+          this.say('안전벨트를 매지 않고 장비를 움직였습니다 (감점)', 'warn');
+        }
       }
     }
     this.step(sim, cmd);

@@ -25,6 +25,8 @@ export interface HudState {
   task: { title: string; lines: ProgressLine[]; time: number; limit: number | null } | null;
   /** 지금 향해야 할 목표 지점 */
   focus: { x: number; y: number; z: number; radius: number } | null;
+  /** 선회 경로의 장애물 줄 */
+  hurdle: { x1: number; z1: number; x2: number; z2: number; height: number } | null;
   /** 운전석 시점에서 조종 장치 이름표를 붙일 화면 위치 */
   tags: { id: string; x: number; y: number }[];
   fps: number;
@@ -73,6 +75,7 @@ const TEMPLATE = `
       <text id="svBucketT" class="lbl bucket">버킷</text>
       <line id="svDrop" class="dropline"></line>
       <circle id="svTarget" class="target"></circle>
+      <g id="svHurdle"><line class="hurdle" x1="0" x2="${SV_W}"></line><text class="hurdleT" x="4"></text></g>
       <text class="note" x="${SV_W - 4}" y="${sy(0) - 4}" text-anchor="end">처음 지면</text>
     </svg>
     <div class="poseRow">
@@ -81,6 +84,7 @@ const TEMPLATE = `
         <rect id="tvDump" class="zone dump"></rect>
         <g id="tvMachine"><rect class="body" x="-8.5" y="-11.5" width="17" height="23" rx="2"></rect><path class="nose" d="M0 -16 L4 -11.5 L-4 -11.5 Z"></path></g>
         <line id="tvArm" class="reach"></line>
+        <line id="tvHurdle" class="hurdle"></line>
         <circle id="tvTarget" class="target" r="6"></circle>
         <circle id="tvTip" r="5"></circle>
       </svg>
@@ -346,7 +350,7 @@ export class Hud {
   }
 
   /** 옆모습·윗모습 그림과 자세 수치 */
-  private updatePose(sim: ExcavatorSim, focus: HudState['focus']): void {
+  private updatePose(sim: ExcavatorSim, focus: HudState['focus'], hurdle: HudState['hurdle']): void {
     const el = this.el;
     const p = sim.pose();
     const sp = sim.spec;
@@ -397,6 +401,20 @@ export class Hud {
     attr(el.tvArm, { x1: c, y1: c, x2: tx(b.tipX), y2: tz(b.tipZ) });
     attr(el.tvTip, { cx: tx(b.tipX), cy: tz(b.tipZ) });
     el.tvTip.setAttribute('class', `tip ${b.zone}`);
+
+    // 장애물 줄: 옆모습에는 넘어야 할 높이선으로, 윗모습에는 줄의 위치로
+    el.svHurdle.style.display = hurdle ? '' : 'none';
+    el.tvHurdle.style.display = hurdle ? '' : 'none';
+    if (hurdle) {
+      const y = sy(hurdle.height);
+      const hl = el.svHurdle.querySelector('line')!;
+      hl.setAttribute('y1', y.toFixed(1));
+      hl.setAttribute('y2', y.toFixed(1));
+      const ht = el.svHurdle.querySelector('text')!;
+      ht.setAttribute('y', (y - 4).toFixed(1));
+      ht.textContent = `장애물 줄 ${hurdle.height.toFixed(1)}m`;
+      attr(el.tvHurdle, { x1: tx(hurdle.x1), y1: tz(hurdle.z1), x2: tx(hurdle.x2), y2: tz(hurdle.z2) });
+    }
 
     // 과제의 목표 지점: 옆모습에는 "장비에서의 거리와 높이"로, 윗모습에는 방향으로 나타낸다
     el.svTarget.style.display = focus ? '' : 'none';
@@ -483,7 +501,7 @@ export class Hud {
     });
     el.fine.classList.toggle('hidden', !s.fine);
 
-    this.updatePose(sim, s.focus);
+    this.updatePose(sim, s.focus, s.hurdle);
 
     el.taskBox.classList.toggle('hidden', !s.task);
     if (s.task) {

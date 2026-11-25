@@ -24,6 +24,10 @@ const FAULT_TEXT: Record<Exclude<CycleFault, ''>, string> = {
  */
 export class Coach {
   notice: Notice | null = null;
+  /** true면 화면에 띄우지 않고 기록만 한다 (도움 없는 시험 방식 과제) */
+  muted = false;
+  /** 이번 과제에서 나온 실수 알림과 횟수. 결과 화면에 보여 준다 */
+  readonly log = new Map<string, number>();
   private spilled = 0;
   private bySwing = 0;
   private returned = 0;
@@ -46,6 +50,14 @@ export class Coach {
     this.stuckTicks = 0;
     this.wasTouching = false;
     this.cooldown.clear();
+    this.log.clear();
+    this.muted = false;
+  }
+
+  private announce(sim: ExcavatorSim, text: string, kind: Notice['kind'], seconds: number, force = false): void {
+    if (kind === 'warn') this.log.set(text, (this.log.get(text) ?? 0) + 1);
+    if (this.muted && !force) return;
+    this.notice = { text, kind, until: sim.tick + seconds * SIM_HZ };
   }
 
   /** 같은 알림은 quiet초 안에 다시 띄우지 않는다 */
@@ -53,12 +65,12 @@ export class Coach {
     const blockedUntil = this.cooldown.get(id) ?? -1;
     if (sim.tick < blockedUntil) return;
     this.cooldown.set(id, sim.tick + quiet * SIM_HZ);
-    this.notice = { text, kind, until: sim.tick + seconds * SIM_HZ };
+    this.announce(sim, text, kind, seconds);
   }
 
   /** 과제 심판이 보낸 알림을 그대로 띄운다 */
   push(sim: ExcavatorSim, text: string, kind: Notice['kind'], seconds = 5): void {
-    this.notice = { text, kind, until: sim.tick + seconds * SIM_HZ };
+    this.announce(sim, text, kind, seconds, true);
   }
 
   /** 코치가 말하지 않는 과제에서도 지난 알림은 지운다 */
@@ -101,9 +113,9 @@ export class Coach {
           `들다가 떨어뜨림 ${r.returned.toFixed(2)}`,
         ];
         if (r.leftover > 0.03) parts.push(`버킷에 남김 ${r.leftover.toFixed(2)} (다음엔 끝까지 펴서 다 쏟으세요)`);
-        this.notice = { text: `사이클 ${sim.cycles} 완료 · ${parts.join(' · ')}`, kind: 'good', until: sim.tick + 8 * SIM_HZ };
+        this.announce(sim, `사이클 ${sim.cycles} 완료 · ${parts.join(' · ')}`, 'good', 8);
       } else if (r.fault !== '') {
-        this.notice = { text: FAULT_TEXT[r.fault], kind: 'warn', until: sim.tick + 7 * SIM_HZ };
+        this.announce(sim, FAULT_TEXT[r.fault], 'warn', 7);
       }
     }
 

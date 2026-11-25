@@ -89,22 +89,22 @@ export class TargetObjective extends Objective {
     const parts: string[] = [];
     const bearing = (x: number, z: number) => Math.atan2(x - sim.x, z - sim.z);
     const turn = wrapAngle(bearing(g.x, g.z) - bearing(t.x, t.z)) / DEG;
-    if (Math.abs(turn) > 3) parts.push(`${turn < 0 ? '왼쪽' : '오른쪽'}으로 ${Math.abs(turn).toFixed(0)}°`);
+    if (Math.abs(turn) > 1) parts.push(`${turn < 0 ? '왼쪽' : '오른쪽'}으로 ${Math.abs(turn).toFixed(0)}°`);
     const reach = Math.hypot(g.x - sim.x, g.z - sim.z) - Math.hypot(t.x - sim.x, t.z - sim.z);
-    if (Math.abs(reach) > 0.15) parts.push(`${reach > 0 ? '멀리' : '가까이'} ${Math.abs(reach).toFixed(1)}m`);
+    if (Math.abs(reach) > 0.05) parts.push(`${reach > 0 ? '멀리' : '가까이'} ${Math.abs(reach).toFixed(1)}m`);
     const up = g.y - t.y;
-    if (Math.abs(up) > 0.15) parts.push(`${up > 0 ? '위로' : '아래로'} ${Math.abs(up).toFixed(1)}m`);
-    return parts.length ? parts.join(', ') : '거의 다 왔습니다';
+    if (Math.abs(up) > 0.05) parts.push(`${up > 0 ? '위로' : '아래로'} ${Math.abs(up).toFixed(1)}m`);
+    return parts.length ? `날 끝에서 ${parts.join(', ')}` : '바로 앞';
   }
 
   goal(sim: ExcavatorSim, pattern: LeverPattern): string | null {
-    if (this.done) return '과제 완료';
+    if (this.done) return this.timedOut ? '제한 시간이 끝났습니다' : '과제 완료';
     const n = this.points.length;
     if (this.distance(sim) <= this.radius) {
       return `목표 ${this.index + 1}/${n}: 좋습니다. 그대로 잠깐 멈추세요<small>공 안에서 ${HOLD_SECONDS}초 머물면 통과합니다</small>`;
     }
     const hint = this.hint ? `${this.hint(pattern)} · ` : '';
-    return `목표 ${this.index + 1}/${n}: 노란 공 안에 버킷 날 끝을 넣으세요<small>${hint}목표는 날 끝에서 ${this.directions(sim)}</small>`;
+    return `목표 ${this.index + 1}/${n}: 노란 공 안에 버킷 날 끝을 넣으세요<small>${hint}목표는 ${this.directions(sim)}</small>`;
   }
 
   brief(_sim: ExcavatorSim): string {

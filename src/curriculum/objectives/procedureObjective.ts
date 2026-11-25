@@ -1,5 +1,5 @@
 import { keyFor, type LeverPattern } from '../../core/input/levers';
-import type { Command } from '../../core/sim/command';
+import { type Command, idleCommand } from '../../core/sim/command';
 import { DEG } from '../../core/sim/math';
 import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Metrics, Objective, type ProgressLine } from '../task';
@@ -46,7 +46,7 @@ const STEPS: Step[] = [
   {
     text: (key) => `왼쪽이나 오른쪽으로 선회해 보세요 (${key('swingL')} 또는 ${key('swingR')})`,
     why: '선회는 놓아도 조금 더 돕니다',
-    done: (s, _c, r) => Math.abs(s.swing - r.swing) > 15 * DEG,
+    done: (s, _c, r) => Math.abs(s.swing - r.swing) > 8 * DEG,
   },
   {
     text: (key) => `작업을 마칩니다. 붐을 내려 버킷을 땅에 내려놓으세요 (${key('boomDown')})`,
@@ -74,10 +74,13 @@ export class ProcedureObjective extends Objective {
   mistakes = 0;
   hornUsed = false;
   private ref: Ref | null = null;
-  private prev: Command | null = null;
+  // 과제는 시동이 꺼지고 잠긴 상태에서 시작한다. 첫 틱부터 순서 위반을 잡기 위해 그 상태를 기준으로 둔다
+  private prev: Command = idleCommand();
+  private beltCounted = 0;
 
   constructor() {
     super(null);
+    this.beltIsFatal = false;
   }
 
   private mistake(text: string): void {
@@ -88,7 +91,12 @@ export class ProcedureObjective extends Objective {
   protected step(sim: ExcavatorSim, cmd: Command): void {
     if (cmd.horn) this.hornUsed = true;
     const prev = this.prev;
-    if (prev) {
+    if (this.beltViolations > this.beltCounted) {
+      // 벨트 없이 레버를 움직인 것도 순서 실수다 (알림은 공통 규칙이 이미 띄웠다)
+      this.beltCounted = this.beltViolations;
+      this.mistakes++;
+    }
+    {
       if (!prev.engineOn && cmd.engineOn && !cmd.belt) this.mistake('안전벨트를 매기 전에 시동을 걸었습니다');
       if (prev.locked && !cmd.locked && !this.hornUsed) this.mistake('경음기로 주변에 알리지 않고 안전레버를 풀었습니다');
       if (prev.engineOn && !prev.locked && !cmd.engineOn) this.mistake('안전레버를 잠그지 않고 시동을 껐습니다');

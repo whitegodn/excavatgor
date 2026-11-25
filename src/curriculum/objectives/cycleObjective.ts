@@ -1,6 +1,6 @@
 import type { LeverPattern } from '../../core/input/levers';
 import { type Command, SIM_HZ } from '../../core/sim/command';
-import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
+import type { CycleReport, ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Marker, type Metrics, Objective, type ProgressLine } from '../task';
 
 /** 선회 경로에 가로놓인 장애물(두 기둥 사이의 줄). 버킷이 이 높이 위로 넘어가야 한다. */
@@ -31,6 +31,9 @@ function crosses(ax: number, az: number, bx: number, bz: number, h: Hurdle): boo
  */
 export class CycleObjective extends Objective {
   hurdleHits = 0;
+  /** 사이클마다의 결과(인정된 것과 세지 않은 것 모두). 결과 화면에 보여 준다 */
+  readonly reports: CycleReport[] = [];
+  private seenReports = 0;
   private prevX = Number.NaN;
   private prevZ = Number.NaN;
   private quietUntil = 0;
@@ -43,14 +46,24 @@ export class CycleObjective extends Objective {
     super(timeLimit);
   }
 
+  /** 버킷에서 가장 낮은 곳의 높이(처음 지면 기준) */
+  private bucketLow(sim: ExcavatorSim): number {
+    const p = sim.pose();
+    return p.baseY + Math.min(p.tipY, p.wristY) - 0.15;
+  }
+
   protected step(sim: ExcavatorSim, _cmd: Command): void {
+    if (sim.reportCount !== this.seenReports) {
+      this.seenReports = sim.reportCount;
+      if (sim.lastCycle) this.reports.push({ ...sim.lastCycle });
+    }
     if (this.hurdle) {
       const p = sim.pose();
       // 버킷 가운데가 줄을 가로지르는 순간, 버킷의 가장 낮은 곳이 줄보다 낮으면 닿은 것이다
       const r = (p.wristR + p.tipR) / 2;
       const cx = p.baseX + p.fwdX * r;
       const cz = p.baseZ + p.fwdZ * r;
-      const low = p.baseY + Math.min(p.tipY, p.wristY) - 0.15;
+      const low = this.bucketLow(sim);
       if (!Number.isNaN(this.prevX) && crosses(this.prevX, this.prevZ, cx, cz, this.hurdle)) {
         if (low < this.hurdle.height && this.ticks >= this.quietUntil) {
           this.hurdleHits++;
@@ -86,6 +99,12 @@ export class CycleObjective extends Objective {
       { label: '완료한 사이클', value: `${Math.min(sim.cycles, this.cycles)} / ${this.cycles}` },
     ];
     if (this.hurdle) {
+      const low = this.bucketLow(sim);
+      lines.push({
+        label: `버킷 바닥 높이 (줄 ${this.hurdle.height.toFixed(1)}m)`,
+        value: `${low.toFixed(2)} m`,
+        tone: low < this.hurdle.height ? 'warn' : 'good',
+      });
       lines.push({
         label: '장애물 접촉',
         value: `${this.hurdleHits} 회`,
@@ -103,7 +122,9 @@ export class CycleObjective extends Objective {
     return {
       cycles: Math.min(sim.cycles, this.cycles),
       target: this.cycles,
-      dumped: sim.dumped,
+      // 사이클로 인정된 흙만 작업량으로 친다
+      dumped: this.reports.filter((r) => r.valid).reduce((sum, r) => sum + r.dumped, 0),
+      uncounted: this.reports.filter((r) => !r.valid).length,
       spilled: sim.spilled,
       returned: sim.returned,
       time: this.time,
