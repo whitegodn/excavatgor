@@ -479,6 +479,7 @@ function draw(): void {
     siteName: sim.site.name,
     showDig: !(objective instanceof DriveObjective),
     tags: world.cabTags(),
+    depthTag: demo ? null : world.depthTag(sim),
     task:
       task && objective
         ? {

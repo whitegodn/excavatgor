@@ -1282,3 +1282,49 @@ body.screen-open #hud {
   text-align: right;
   font-size: 13px;
 }
+
+/* 파인 깊이: 단면 그림의 눈금과 가장 깊은 곳, 3D 화면의 이름표 */
+#side .depthGrid {
+  stroke: rgba(255, 255, 255, 0.22);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+}
+#side .depthGridT {
+  fill: rgba(255, 255, 255, 0.55);
+  font-size: 9.5px;
+}
+#side .deepMark {
+  stroke: #ffd24a;
+  stroke-width: 2;
+}
+#side .deepT {
+  fill: #ffd24a;
+  font-size: 11.5px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(20, 14, 8, 0.85);
+  stroke-width: 3px;
+}
+#side .depthT {
+  fill: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  paint-order: stroke;
+  stroke: rgba(20, 14, 8, 0.85);
+  stroke-width: 3px;
+}
+.depthTag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(16, 20, 26, 0.78);
+  border: 1px solid #ffd24a;
+  color: #ffd24a;
+  font-size: 13px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+}

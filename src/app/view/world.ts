@@ -503,6 +503,29 @@ export class World {
     return out;
   }
 
+  /**
+   * 버킷 날 끝 바로 아래 땅이 처음 지면보다 얼마나 파였는지, 그 자리의 화면 위치와 함께 돌려준다.
+   * 파이지 않았으면(5cm 미만) null. 덤프트럭 위에서는 표시하지 않는다.
+   */
+  depthTag(sim: ExcavatorSim): { x: number; y: number; depth: number } | null {
+    const p = sim.pose();
+    const tipX = p.baseX + p.fwdX * p.tipR;
+    const tipZ = p.baseZ + p.fwdZ * p.tipR;
+    if (this.site.truck && zoneAt(this.site, tipX, tipZ) === 'dump') return null;
+    const ground = sim.terrain.heightAt(tipX, tipZ);
+    const original = this.site.shape ? this.site.shape(tipX, tipZ) : 0;
+    const depth = original - ground;
+    if (depth < 0.05) return null;
+    const cam = this.scene.activeCamera;
+    if (!cam) return null;
+    const w = this.engine.getRenderWidth();
+    const h = this.engine.getRenderHeight();
+    const scale = this.canvas.clientWidth / w;
+    const at = Vector3.Project(new Vector3(tipX, ground, tipZ), Matrix.IdentityReadOnly, this.scene.getTransformMatrix(), cam.viewport.toGlobal(w, h));
+    if (at.z < 0 || at.z > 1) return null;
+    return { x: at.x * scale, y: at.y * scale, depth };
+  }
+
   /** 시뮬레이션 상태를 화면에 반영한다. */
   sync(sim: ExcavatorSim, controls?: CabControls): void {
     this.terrainView.sync();

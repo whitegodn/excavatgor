@@ -33,6 +33,8 @@ export interface HudState {
   focus: { x: number; y: number; z: number; radius: number } | null;
   /** 선회 경로의 장애물 줄 */
   hurdle: { x1: number; z1: number; x2: number; z2: number; height: number; top?: number } | null;
+  /** 버킷 아래 땅이 파인 깊이와 그 자리의 화면 위치. 파이지 않았으면 null */
+  depthTag: { x: number; y: number; depth: number } | null;
   /** 운전석 시점에서 조종 장치 이름표를 붙일 화면 위치 */
   tags: { id: string; x: number; y: number }[];
   fps: number;
@@ -85,6 +87,14 @@ const TEMPLATE = `
       <g id="svHurdle"><line class="hurdle" x1="0" x2="${SV_W}"></line><text class="hurdleT" x="4"></text></g>
       <g id="svLimit"><line class="hurdle" x1="0" x2="${SV_W}" stroke-dasharray="6 5"></line><text class="hurdleT" x="4"></text></g>
       <text class="note" x="${SV_W - 4}" y="${sy(0) - 4}" text-anchor="end">처음 지면</text>
+      ${[0.5, 1, 1.5, 2, 2.5]
+        .map(
+          (m) =>
+            `<line class="depthGrid" x1="0" x2="${SV_W}" y1="${sy(-m).toFixed(1)}" y2="${sy(-m).toFixed(1)}"></line><text class="depthGridT" x="${SV_W - 4}" y="${(sy(-m) - 2).toFixed(1)}" text-anchor="end">−${m.toFixed(1)}m</text>`,
+        )
+        .join('')}
+      <g id="svDeep"><line class="deepMark"></line><text class="deepT" text-anchor="middle"></text></g>
+      <text id="svDepth" class="depthT" x="6" y="${SV_H - 7}"></text>
     </svg>
     <div class="poseRow">
       <svg id="top" viewBox="0 0 ${TV_SIZE} ${TV_SIZE}">
@@ -228,6 +238,7 @@ const TEMPLATE = `
   <div class="tag" data-id="lock">안전레버 <kbd>F</kbd></div>
   <div class="tag" data-id="dial">엔진 다이얼 <kbd>−</kbd><kbd>+</kbd></div>
 </div>
+<div id="depthTag" class="depthTag hidden"></div>
 <div id="help" class="box hidden">
   <h2>도움말 <small><kbd>H</kbd> 로 닫기</small></h2>
   <div class="cols">
@@ -379,6 +390,27 @@ export class Hud {
       d += ` L${sx(r).toFixed(1)} ${sy(h).toFixed(1)}`;
     }
     el.svSoil.setAttribute('d', `${d} L${SV_W} ${SV_H} Z`);
+    // 이 단면에서 가장 깊이 파인 곳: 처음 지면에서 그 바닥까지 세로선을 긋고 깊이를 적는다
+    let deepR = 0;
+    let deep = 0;
+    for (let i = 0; i <= 136; i++) {
+      const r = SV_R0 + i * 0.1;
+      const x = p.baseX + p.fwdX * r;
+      const z = p.baseZ + p.fwdZ * r;
+      const cut = (sim.site.shape ? sim.site.shape(x, z) : 0) - sim.terrain.heightAt(x, z);
+      if (cut > deep) {
+        deep = cut;
+        deepR = r;
+      }
+    }
+    el.svDeep.style.display = deep >= 0.05 ? '' : 'none';
+    if (deep >= 0.05) {
+      const bottom = sim.terrain.heightAt(p.baseX + p.fwdX * deepR, p.baseZ + p.fwdZ * deepR) - p.baseY;
+      attr(el.svDeep.querySelector('line')!, { x1: sx(deepR), x2: sx(deepR), y1: sy(bottom + deep), y2: sy(bottom) });
+      const label = el.svDeep.querySelector('text')!;
+      attr(label, { x: Math.min(SV_W - 34, Math.max(34, sx(deepR))), y: sy(bottom) + 13 });
+      label.textContent = `깊이 ${deep.toFixed(2)}m`;
+    }
 
     attr(el.svBoom, { x1: sx(p.pivotR), y1: sy(p.pivotY), x2: sx(p.elbowR), y2: sy(p.elbowY) });
     attr(el.svArm, { x1: sx(p.elbowR), y1: sy(p.elbowY), x2: sx(p.wristR), y2: sy(p.wristY) });
@@ -402,6 +434,10 @@ export class Hud {
     const b = bucketView(sim);
     attr(el.svDrop, { x1: sx(p.tipR), y1: sy(p.tipY), x2: sx(p.tipR), y2: sy(b.ground - p.baseY) });
     el.svDrop.style.display = b.above > 0.05 ? '' : 'none';
+    // 버킷 날 끝 바로 아래 땅의 깊이 (처음 지면 기준)
+    const under = (sim.site.shape ? sim.site.shape(b.tipX, b.tipZ) : 0) - sim.terrain.heightAt(b.tipX, b.tipZ);
+    el.svDepth.textContent =
+      deep < 0.05 ? '' : `버킷 아래 깊이 ${Math.max(0, under).toFixed(2)}m · 이 단면에서 가장 깊은 곳 ${deep.toFixed(2)}m`;
 
     // 위에서 본 모습: 장비가 가운데, 화면 위쪽이 처음 정면
     const c = TV_SIZE / 2;
@@ -526,6 +562,12 @@ export class Hud {
       if (at) tag.style.transform = `translate(${at.x.toFixed(0)}px, ${at.y.toFixed(0)}px) ${TAG_OFFSET[at.id] ?? 'translate(-50%, -150%)'}`;
     });
     el.fine.classList.toggle('hidden', !s.fine);
+    // 3D 화면: 버킷 아래 파인 자리에 깊이를 적는다
+    el.depthTag.classList.toggle('hidden', !s.depthTag || !s.showDig);
+    if (s.depthTag) {
+      el.depthTag.style.transform = `translate(${s.depthTag.x.toFixed(0)}px, ${s.depthTag.y.toFixed(0)}px) translate(14px, -50%)`;
+      el.depthTag.textContent = `깊이 ${s.depthTag.depth.toFixed(2)}m`;
+    }
 
     this.updatePose(sim, s.focus, s.hurdle);
 

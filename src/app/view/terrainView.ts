@@ -16,6 +16,21 @@ function noise(i: number, j: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967295;
 }
 
+/** 깊이 띠의 간격(m). 띠 하나가 25cm다 */
+export const DEPTH_BAND = 0.25;
+
+/**
+ * 등고선 띠의 밝기. 높이(또는 깊이) v가 띠의 경계에 가까우면 line만큼 어둡게,
+ * 그 밖에는 띠마다 번갈아 1과 alt를 준다.
+ */
+function bandShade(v: number, line: number, alt: number): number {
+  const t = v / DEPTH_BAND;
+  const frac = t - Math.floor(t);
+  const edge = Math.min(frac, 1 - frac);
+  if (edge < 0.14) return line + (1 - line) * (edge / 0.14) * 0.5;
+  return Math.floor(t) % 2 === 0 ? 1 : alt;
+}
+
 /** 높이맵 지형을 그리는 메시. 바뀐 부분만 다시 계산한다. */
 export class TerrainView {
   readonly mesh: Mesh;
@@ -118,7 +133,16 @@ export class TerrainView {
           g = 0.51 - 0.15 * w;
           b = 0.35 - 0.1 * w;
         }
-        const shade = 0.9 + 0.2 * noise(i, j);
+        let shade = 0.9 + 0.2 * noise(i, j);
+        // 파인 깊이를 눈으로 읽을 수 있게: 깊을수록 어둡게 하고, 25cm마다 등고선처럼 띠를 넣는다.
+        // 쌓인 흙에도 같은 간격으로 옅은 띠를 넣어 높이를 가늠하게 한다
+        if (y < -DEPTH_BAND * 0.2) {
+          const depth = -y;
+          shade *= 1 - 0.34 * Math.min(1, depth / 2);
+          shade *= bandShade(depth, 0.62, 0.9);
+        } else if (y > DEPTH_BAND * 0.6) {
+          shade *= bandShade(y, 0.8, 1);
+        }
         const c = idx * 4;
         this.colors[c] = r * shade;
         this.colors[c + 1] = g * shade;
