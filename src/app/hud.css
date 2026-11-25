@@ -1,0 +1,845 @@
+:root {
+  --panel: rgba(16, 20, 26, 0.76);
+  --line: rgba(255, 255, 255, 0.16);
+  --text: #f1f3f5;
+  --muted: #b4bcc7;
+  --accent: #ffc531;
+  --good: #57d98a;
+  --bad: #ff6b5e;
+  --blue: #4f9dff;
+  /* 부위별 색: 그림, 레버 글자, 도움말이 같은 색을 쓴다 */
+  --boom: #ffa24a;
+  --arm: #5fe39a;
+  --bucket: #6fb1ff;
+  --swing: #d7a8ff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #a9cbed;
+  color: var(--text);
+  font-family: 'Pretendard', 'Malgun Gothic', 'Apple SD Gothic Neo', system-ui, sans-serif;
+  font-size: 15px;
+  user-select: none;
+}
+
+#view {
+  position: fixed;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  outline: none;
+  touch-action: none;
+}
+
+#hud {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+}
+
+.hidden {
+  display: none !important;
+}
+
+.box {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  backdrop-filter: blur(4px);
+}
+.box h2 {
+  margin: 0 0 6px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--accent);
+}
+.box h2 small {
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+.boom {
+  color: var(--boom);
+}
+.arm {
+  color: var(--arm);
+}
+.bucket {
+  color: var(--bucket);
+}
+.swing {
+  color: var(--swing);
+}
+
+kbd {
+  display: inline-block;
+  min-width: 22px;
+  padding: 1px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(255, 255, 255, 0.4);
+  border-bottom-width: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  font: 600 13px/1.4 ui-monospace, Consolas, monospace;
+  text-align: center;
+  color: #fff;
+}
+
+/* ── 왼쪽: 장비 상태와 자세 ── */
+#left {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 304px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#status h1 {
+  margin: 0 0 8px;
+  font-size: 16px;
+  font-weight: 700;
+}
+#status h1 small {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13px;
+  margin-left: 6px;
+}
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.chip {
+  padding: 3px 8px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  font-size: 13px;
+  white-space: nowrap;
+}
+.chip.on {
+  background: rgba(87, 217, 138, 0.2);
+  border-color: var(--good);
+  color: #c9f7dc;
+}
+.chip.off {
+  background: rgba(255, 107, 94, 0.2);
+  border-color: var(--bad);
+  color: #ffd3ce;
+}
+
+#side {
+  display: block;
+  width: 100%;
+  border-radius: 6px;
+  background: rgba(150, 195, 235, 0.16);
+}
+#side .soil {
+  fill: #8a6a48;
+  stroke: #c9a57a;
+  stroke-width: 1.5;
+}
+#side .datum {
+  stroke: rgba(255, 255, 255, 0.55);
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+}
+#side .body {
+  fill: #59606a;
+}
+#side .cabin {
+  fill: #7e8b98;
+}
+#side .part {
+  stroke-width: 9;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  opacity: 0.82;
+}
+#side .part.boom {
+  stroke: var(--boom);
+}
+#side .part.arm {
+  stroke: var(--arm);
+  stroke-width: 7;
+}
+#side .part.bucket {
+  stroke: var(--bucket);
+  fill: var(--bucket);
+  stroke-width: 2;
+}
+#side .part.act {
+  opacity: 1;
+  filter: drop-shadow(0 0 5px #fff);
+}
+#side .lbl {
+  font-size: 15px;
+  font-weight: 700;
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.75);
+  stroke-width: 3px;
+}
+#side .lbl.boom {
+  fill: var(--boom);
+}
+#side .lbl.arm {
+  fill: var(--arm);
+}
+#side .lbl.bucket {
+  fill: var(--bucket);
+}
+#side .note {
+  font-size: 11px;
+  fill: rgba(255, 255, 255, 0.75);
+}
+#side .dropline {
+  stroke: #fff;
+  stroke-width: 1.5;
+  stroke-dasharray: 3 3;
+}
+
+.poseRow {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+  align-items: stretch;
+}
+#top {
+  width: 112px;
+  height: 112px;
+  flex: none;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.28);
+}
+#top .zone {
+  fill-opacity: 0.22;
+  stroke-width: 2;
+}
+#top .zone.dig {
+  fill: #ffd91a;
+  stroke: #ffd91a;
+}
+#top .zone.dump {
+  fill: #3d8cff;
+  stroke: #3d8cff;
+}
+#top .body {
+  fill: #c9ced6;
+}
+#top .nose {
+  fill: #fff;
+}
+#top .reach {
+  stroke: #fff;
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+#top .tip {
+  fill: #fff;
+  stroke: #000;
+  stroke-width: 1;
+}
+#top .tip.dig {
+  fill: #ffd91a;
+}
+#top .tip.dump {
+  fill: #3d8cff;
+}
+.readouts {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  font-size: 13px;
+}
+.ro {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.25;
+}
+.ro span {
+  color: var(--muted);
+  font-size: 12px;
+}
+.ro b {
+  font-size: 14.5px;
+  font-variant-numeric: tabular-nums;
+}
+.ro b.hot {
+  color: var(--accent);
+}
+.ro b.dig {
+  color: #ffd91a;
+}
+.ro b.dump {
+  color: #6fb1ff;
+}
+.strokes {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12.5px;
+}
+.st {
+  display: grid;
+  grid-template-columns: 34px 30px 1fr 42px;
+  align-items: center;
+  gap: 4px;
+}
+.st span {
+  font-weight: 700;
+}
+.st i {
+  font-style: normal;
+  color: var(--muted);
+  font-size: 11.5px;
+}
+.st i:first-of-type {
+  text-align: right;
+}
+.sbar {
+  height: 8px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+.sbar u {
+  display: block;
+  height: 100%;
+  background: #cfd6de;
+  border-radius: 4px;
+}
+.sbar.end {
+  outline: 2px solid var(--accent);
+}
+.sbar.end u {
+  background: var(--accent);
+}
+
+/* ── 가운데 위: 지금 할 일, 실수 알림 ── */
+#center {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(600px, calc(100vw - 660px));
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+#prompt {
+  width: 100%;
+  text-align: center;
+  padding: 10px 18px;
+  border-radius: 10px;
+  background: rgba(16, 20, 26, 0.84);
+  border: 1px solid var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.5;
+}
+#prompt small {
+  display: block;
+  font-size: 13.5px;
+  font-weight: 400;
+  color: var(--muted);
+  margin-top: 3px;
+}
+#notice {
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.45;
+  text-align: center;
+  background: rgba(120, 30, 22, 0.9);
+  border: 1px solid var(--bad);
+}
+#notice.good {
+  background: rgba(18, 82, 48, 0.9);
+  border-color: var(--good);
+}
+
+/* ── 오른쪽 위: 측정 ── */
+#metrics {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 292px;
+}
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 13.5px;
+}
+.row span:first-child {
+  color: var(--muted);
+}
+.row span:first-child small {
+  font-size: 11.5px;
+}
+.row span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.bar {
+  height: 9px;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  margin: 3px 0 7px;
+}
+.bar i {
+  display: block;
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  border-radius: 5px;
+}
+.bar.warn i {
+  background: linear-gradient(90deg, #57d98a, #ffc531 55%, #ff6b5e);
+  background-size: 268px 100%;
+}
+.sep {
+  height: 1px;
+  background: var(--line);
+  margin: 6px 0;
+}
+.ok {
+  color: var(--good);
+}
+.warnText {
+  color: var(--bad);
+}
+
+/* ── 아래: 가상 레버 ── */
+#levers {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  transform: translateX(-50%);
+  transform-origin: bottom center;
+  padding: 10px 16px 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.leverRow {
+  display: flex;
+  align-items: flex-end;
+  gap: 18px;
+}
+.lever {
+  display: grid;
+  grid-template-areas:
+    'title title title'
+    '. up .'
+    'left pad right'
+    '. down .';
+  grid-template-columns: minmax(80px, auto) auto minmax(80px, auto);
+  align-items: center;
+  justify-items: center;
+  gap: 3px 6px;
+  font-size: 13.5px;
+}
+.lever .title {
+  grid-area: title;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--muted);
+}
+.lever .up {
+  grid-area: up;
+}
+.lever .down {
+  grid-area: down;
+}
+.lever .left {
+  grid-area: left;
+  justify-self: end;
+}
+.lever .right {
+  grid-area: right;
+  justify-self: start;
+}
+.lever .pad {
+  grid-area: pad;
+}
+.lever .lab {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  line-height: 1.25;
+  white-space: nowrap;
+  font-weight: 600;
+  opacity: 0.82;
+}
+.lever .lab.act {
+  opacity: 1;
+  text-shadow: 0 0 8px currentColor;
+}
+.lever .lab.act kbd {
+  background: var(--accent);
+  color: #000;
+  border-color: var(--accent);
+}
+/* 위에서 내려다본 조종 레버 */
+.pad {
+  width: 84px;
+  height: 84px;
+  display: block;
+}
+.pad .plate {
+  fill: rgba(0, 0, 0, 0.34);
+  stroke: rgba(255, 255, 255, 0.35);
+  stroke-width: 2;
+}
+.pad .cross {
+  stroke: rgba(255, 255, 255, 0.16);
+  stroke-width: 1;
+}
+.pad .boot {
+  fill: #2b2f36;
+  stroke: #555c66;
+  stroke-width: 2;
+}
+.pad .stick {
+  stroke: #9aa3ad;
+  stroke-width: 7;
+  stroke-linecap: round;
+}
+.pad .knob {
+  fill: #3a3f47;
+  stroke: #0d0f12;
+  stroke-width: 2;
+}
+.pad .shine {
+  fill: rgba(255, 255, 255, 0.35);
+}
+.pad.moved .knob {
+  fill: var(--accent);
+}
+.pad.moved .shine {
+  fill: rgba(255, 255, 255, 0.7);
+}
+.grp {
+  display: flex;
+  align-items: flex-end;
+  gap: 12px;
+}
+/* 안전레버, 엔진 다이얼 */
+.aux {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+.aux .title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.aux svg {
+  width: 50px;
+  height: 58px;
+}
+.aux .state {
+  font-size: 12px;
+  font-weight: 700;
+}
+.aux .base {
+  fill: #2b2f36;
+  stroke: #555c66;
+}
+.aux .rod {
+  stroke: #9aa3ad;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.aux .lockKnob {
+  fill: var(--good);
+  stroke: #0d0f12;
+  stroke-width: 2;
+}
+#auxLock .state {
+  color: var(--good);
+}
+#auxLock.locked .lockKnob {
+  fill: var(--bad);
+}
+#auxLock.locked .state {
+  color: var(--bad);
+}
+.aux .dialRing {
+  fill: rgba(0, 0, 0, 0.34);
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 2;
+}
+.aux .dialArc {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 2 5.2;
+}
+.aux .hand {
+  stroke: #fff;
+  stroke-width: 3.5;
+  stroke-linecap: round;
+}
+.aux .dialHub {
+  fill: #2b2f36;
+  stroke: #555c66;
+  stroke-width: 2;
+}
+.aux text {
+  fill: #fff;
+  font-size: 14px;
+  font-weight: 700;
+}
+#auxDial.off svg {
+  opacity: 0.45;
+}
+.travel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.travel .title {
+  font-weight: 700;
+  font-size: 13px;
+}
+.travel .bars {
+  display: flex;
+  gap: 6px;
+}
+.travel .tkeys {
+  text-align: center;
+  line-height: 1.7;
+  white-space: nowrap;
+}
+/* 주행 레버와 페달 */
+.tlever {
+  width: 36px;
+  height: 76px;
+}
+.tlever .pedal {
+  fill: #3a3f47;
+  stroke: #0d0f12;
+  stroke-width: 1.5;
+}
+.tlever .tread {
+  stroke: rgba(255, 255, 255, 0.25);
+  stroke-width: 1.5;
+}
+.tlever .rod {
+  stroke: #9aa3ad;
+  stroke-width: 5;
+  stroke-linecap: round;
+}
+.tlever .grip {
+  fill: #3a3f47;
+  stroke: #0d0f12;
+  stroke-width: 1.5;
+}
+.tlever.moved .grip,
+.tlever.moved .pedal {
+  fill: var(--accent);
+}
+#fine {
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 1px 10px;
+  border-radius: 999px;
+  background: var(--blue);
+  color: #fff;
+  font-size: 12.5px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.keys {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  margin-top: 8px;
+  padding-top: 7px;
+  border-top: 1px solid var(--line);
+  font-size: 12.5px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+/* ── 도움말(H) ── */
+#help {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: min(820px, calc(100vw - 40px));
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  background: rgba(16, 20, 26, 0.94);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: 16px 20px;
+}
+#help .cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 24px;
+}
+#help h3 {
+  margin: 10px 0 4px;
+  font-size: 14px;
+  color: var(--accent);
+}
+#help p {
+  margin: 3px 0;
+}
+#help .k {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 1px 0;
+}
+#help .k span:first-child {
+  color: var(--muted);
+}
+
+/* ── 운전석 시점: 화면 가운데 아래에 실제 조종 장치가 보이므로, 레버 설명은 양쪽 구석으로 보낸다 ── */
+#hud.cab #levers {
+  left: 12px;
+  right: 12px;
+  bottom: 10px;
+  transform: none;
+  padding: 0;
+  background: none;
+  border: none;
+  backdrop-filter: none;
+}
+#hud.cab .leverRow {
+  justify-content: space-between;
+}
+#hud.cab .grp {
+  padding: 8px 12px;
+  background: rgba(16, 20, 26, 0.62);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+#hud.cab .travel,
+#hud.cab .aux,
+#hud.cab .lever .title {
+  display: none;
+}
+#hud.cab .keys {
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: rgba(16, 20, 26, 0.62);
+  flex-wrap: nowrap;
+}
+#hud.cab #fine {
+  top: auto;
+  bottom: 44px;
+}
+/* 실제 조종 장치에 붙이는 이름표 */
+#tags {
+  position: absolute;
+  inset: 0;
+}
+.tag {
+  position: absolute;
+  left: 0;
+  top: 0;
+  padding: 2px 8px;
+  border-radius: 8px;
+  background: rgba(16, 20, 26, 0.72);
+  border: 1px solid var(--line);
+  font-size: 12.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.tag::after {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 100%;
+  width: 1px;
+  height: 10px;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* 좁은 창: 패널들이 서로 겹치지 않게 줄인다 */
+@media (max-width: 1280px) {
+  #left {
+    transform: scale(0.84);
+    transform-origin: top left;
+  }
+  #metrics {
+    transform: scale(0.84);
+    transform-origin: top right;
+  }
+  #levers {
+    transform: translateX(-50%) scale(0.84);
+  }
+  #hud.cab #levers {
+    transform: none;
+  }
+  #hud.cab .grp {
+    transform: scale(0.84);
+    transform-origin: bottom left;
+  }
+  #hud.cab .grp:last-child {
+    transform-origin: bottom right;
+  }
+  #center {
+    width: min(520px, calc(100vw - 560px));
+  }
+}
+@media (max-width: 980px) {
+  #left,
+  #metrics {
+    transform: scale(0.7);
+  }
+  #levers {
+    transform: translateX(-50%) scale(0.7);
+  }
+  #center {
+    width: min(420px, calc(100vw - 440px));
+    min-width: 220px;
+  }
+  #prompt {
+    font-size: 14.5px;
+  }
+}
