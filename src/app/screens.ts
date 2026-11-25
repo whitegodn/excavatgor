@@ -173,19 +173,26 @@ export class Screens {
     const span = m.next ? m.next.xp - m.rank.xp : 1;
     const into = m.next ? m.xp - m.rank.xp : 1;
     let primary = false;
+    const starSum = m.stages.reduce((sum, st) => sum + (m.progress.get(st.id) ? m.stars(m.progress.get(st.id)!.best) : 0), 0);
+    const starMax = m.stages.length * 3;
+    const goal = m.next
+      ? `레벨 ${m.next.level}(${esc(m.next.name)})까지 ${m.next.xp - m.xp}`
+      : starSum < starMax
+        ? '최고 레벨 · 다음 목표: 모든 스테이지 별 3개'
+        : '최고 레벨 · 모든 별을 모았습니다';
     let html = `${this.tabs('sim')}
       <header>
         <div class="rank">
           <b>레벨 ${m.rank.level} · ${esc(m.rank.name)}</b>
-          <span>경험치 ${m.xp}${m.next ? ` · 레벨 ${m.next.level}(${esc(m.next.name)})까지 ${m.next.xp - m.xp}` : ' · 최고 레벨'}</span>
+          <span>경험치 ${m.xp} · 별 ${starSum}/${starMax} · ${goal}</span>
         </div>
-        <p class="sub right">경험치는 스테이지별 최고 점수의 합입니다.<br>같은 스테이지를 다시 해서 점수를 올려도 쌓입니다.</p>
+        <p class="sub right">경험치는 스테이지별 최고 점수의 합입니다 (불합격한 점수도 들어갑니다).<br>같은 스테이지를 다시 해서 점수를 올리면 그만큼 더 쌓입니다. 별은 60 · 80 · 95점에 하나씩.</p>
       </header>
       <div class="bar"><i style="width:${Math.round((into / span) * 100)}%"></i></div>`;
     const levelsInUse = [...new Set(m.stages.map((st) => st.level))].sort((a, b) => a - b);
     for (const lv of levelsInUse) {
       const open = lv <= m.rank.level;
-      html += `<section><h2>레벨 ${lv} · ${esc(m.levelNames[lv] ?? '')} <small>${open ? '열림' : `레벨 ${lv}이 되면 열림`}</small></h2><div class="tasks">`;
+      html += `<section><h2>레벨 ${lv} · ${esc(m.levelNames[lv] ?? '')} <small>${open ? '열림' : `레벨 ${lv}부터 열림`}</small></h2><div class="tasks">`;
       for (const st of m.stages.filter((x) => x.level === lv)) {
         const rec = m.progress.get(st.id);
         const unlocked = m.unlocked(st);

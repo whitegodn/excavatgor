@@ -38,7 +38,7 @@ export function promptFor(s: PromptState): string {
   // 절차 과제는 준비 단계 자체가 과제다
   if (objective instanceof ProcedureObjective) return objective.goal(s.sim, s.pattern) ?? '';
   // 준비(안전벨트 → 시동 → 안전레버)는 모든 과제에서 알려 준다
-  if (!s.engineOn || s.locked) return guideText({ ...base, coach: false });
+  if (!s.belt || !s.engineOn || s.locked) return guideText({ ...base, coach: false });
   if (task.coach === 'none' || !s.coachOn) return objective.brief(s.sim);
   const own = objective.goal(s.sim, s.pattern);
   if (own !== null) return own;

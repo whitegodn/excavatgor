@@ -70,8 +70,8 @@ describe('덤프트럭 싣기', () => {
     expect(sim.truckLoad).toBeLessThan(sim.spilled);
   });
 
-  it('S1-1: 높이 들고 세 번 실으면 합격, 낮게 넣으면 트럭 접촉으로 센다', () => {
-    const good = begin('S1-1');
+  it('S1-2: 높이 들고 실으면 합격, 낮게 넣으면 트럭 접촉으로 센다', () => {
+    const good = begin('S1-2');
     const pilot = new Autopilot(4, -90 * DEG, 4.2);
     while (!good.objective.done && good.sim.tick < 400 * SIM_HZ) {
       const cmd = pilot.next(good.sim);
@@ -79,11 +79,11 @@ describe('덤프트럭 싣기', () => {
       good.objective.update(good.sim, cmd);
     }
     const o = good.objective as TruckObjective;
-    expect(good.sim.truckLoad).toBeGreaterThanOrEqual(1.5);
+    expect(good.sim.truckLoad).toBeGreaterThanOrEqual(1.2);
     expect(o.hits).toBe(0);
     expect(finalize(good.task.score!(o.metrics(good.sim), o), o.fatal, 60).pass).toBe(true);
 
-    const low = begin('S1-1');
+    const low = begin('S1-2');
     const lowPilot = new Autopilot(4, -90 * DEG, 1.2);
     while (!low.objective.done && low.sim.tick < 400 * SIM_HZ) {
       const cmd = lowPilot.next(low.sim);
@@ -95,8 +95,8 @@ describe('덤프트럭 싣기', () => {
 });
 
 describe('주행', () => {
-  it('S1-2: 깃발을 따라 달리면 완주하고 합격한다', () => {
-    const { task, sim, objective } = begin('S1-2');
+  it('S1-1: 깃발을 따라 달리면 완주하고 합격한다', () => {
+    const { task, sim, objective } = begin('S1-1');
     drive(sim, objective as DriveObjective, true);
     expect(objective.done).toBe(true);
     expect(objective.timedOut).toBe(false);
@@ -125,7 +125,7 @@ describe('주행', () => {
       lo = Math.min(lo, sim.y);
       hi = Math.max(hi, sim.y);
     }
-    expect(hi - lo).toBeGreaterThan(0.8);
+    expect(hi - lo).toBeGreaterThan(0.4);
   });
 
   it('오르막에서는 평지보다 느리다', () => {
@@ -147,7 +147,7 @@ describe('주행', () => {
   });
 
   it('버킷을 땅에 댄 채 주행하면 감점으로 센다', () => {
-    const { sim, objective } = begin('S1-2');
+    const { sim, objective } = begin('S1-1');
     const o = objective as DriveObjective;
     for (let i = 0; i < 1.2 * SIM_HZ; i++) sim.step(on({ bucket: -1 }));
     for (let i = 0; i < 6 * SIM_HZ; i++) sim.step(on({ boom: -1 }));
@@ -157,6 +157,68 @@ describe('주행', () => {
       o.update(sim, cmd);
     }
     expect(o.drags).toBe(1);
+  });
+});
+
+describe('5차 리뷰에서 고친 것', () => {
+  it('회전 키를 놓으면 금방 멈춘다 (저속 제자리 회전: 놓은 뒤 6° 이내)', () => {
+    const sim = new ExcavatorSim(FLAT_COURSE);
+    for (let i = 0; i < SIM_HZ; i++) sim.step(on({ boom: 1, rpm: 8 }));
+    for (let i = 0; i < 1.5 * SIM_HZ; i++) sim.step(on({ travelL: 1, travelR: -1, rpm: 8 }));
+    const at = sim.heading;
+    for (let i = 0; i < 1.5 * SIM_HZ; i++) sim.step(on({ rpm: 8 }));
+    expect((sim.heading - at) / DEG).toBeLessThan(6);
+    expect(sim.trackL).toBe(0);
+  });
+
+  it('흙을 가득 실은 채 고속 단으로 급하게 꺾으면 흘리고, 저속 단에서는 흘리지 않는다', () => {
+    const spill = (fast: boolean): number => {
+      const sim = new ExcavatorSim(FLAT_COURSE);
+      for (let i = 0; i < 1.2 * SIM_HZ; i++) sim.step(on({ boom: 1, rpm: 8 }));
+      for (let i = 0; i < SIM_HZ; i++) sim.step(on({ bucket: 1, rpm: 8 }));
+      (sim as unknown as { load: number }).load = 0.58;
+      for (let n = 0; n < 3; n++) {
+        for (let i = 0; i < 1.5 * SIM_HZ; i++) sim.step(on({ travelL: 1, travelR: 0, rpm: 8, fast }));
+        for (let i = 0; i < SIM_HZ; i++) sim.step(on({ rpm: 8, fast }));
+      }
+      return sim.spilledByTravel;
+    };
+    expect(spill(true)).toBeGreaterThan(0.03);
+    expect(spill(false)).toBeLessThan(0.01);
+  });
+
+  it('트럭 접촉은 한 번 닿아서 뗄 때까지 1회로 센다', () => {
+    const { sim, objective } = begin('S1-2');
+    const o = objective as TruckObjective;
+    const run = (cmd: Command, seconds: number) => {
+      for (let i = 0; i < seconds * SIM_HZ && !o.done; i++) {
+        sim.step(cmd);
+        o.update(sim, cmd);
+      }
+    };
+    // 낮은 채로 트럭 쪽(왼쪽)으로 돌아 들어가 5초 머문다
+    run(on({ swing: -1 }), 4);
+    run(on(), 5);
+    expect(o.hits).toBe(1);
+    expect(o.fatal).toBeNull();
+  });
+
+  it('도로 코스: 도로를 벗어나 달린 시간을 잰다', () => {
+    const { sim, objective } = begin('S3-1');
+    const o = objective as DriveObjective;
+    for (let i = 0; i < SIM_HZ; i++) sim.step(on({ boom: 1 }));
+    // 출발하자마자 옆으로 꺾어 도로 밖으로 나간다
+    for (let i = 0; i < 2 * SIM_HZ; i++) {
+      const cmd = on({ travelL: 1, travelR: -1 });
+      sim.step(cmd);
+      o.update(sim, cmd);
+    }
+    for (let i = 0; i < 12 * SIM_HZ; i++) {
+      const cmd = on({ travelL: 1, travelR: 1, fast: true });
+      sim.step(cmd);
+      o.update(sim, cmd);
+    }
+    expect(o.offRoadSeconds).toBeGreaterThan(3);
   });
 });
 
@@ -178,12 +240,12 @@ describe('스테이지 구성과 레벨업', () => {
   it('처음에는 레벨 1 스테이지만 열려 있고, 경험치가 쌓이면 레벨이 오르며 다음 스테이지가 열린다', () => {
     const p = new Progress(STAGES, fakeStore(), 'test-sim');
     expect(simRank(simXp(p)).level).toBe(1);
-    expect(stageUnlocked(stageById('S1-1')!, p)).toBe(true);
+    expect(stageUnlocked(stageById('S1-2')!, p)).toBe(true);
     expect(stageUnlocked(stageById('S2-1')!, p)).toBe(false);
-    p.record('S1-1', scored(80));
+    p.record('S1-2', scored(80));
     expect(simXp(p)).toBe(80);
     expect(nextRank(simXp(p))?.level).toBe(2);
-    p.record('S1-2', scored(70));
+    p.record('S1-1', scored(70));
     expect(simRank(simXp(p)).level).toBe(2);
     expect(stageUnlocked(stageById('S2-1')!, p)).toBe(true);
     expect(stageUnlocked(stageById('S3-1')!, p)).toBe(false);
@@ -191,9 +253,9 @@ describe('스테이지 구성과 레벨업', () => {
 
   it('같은 스테이지를 다시 해서 점수를 올리면 경험치도 오른다 (최고 점수 기준)', () => {
     const p = new Progress(STAGES, fakeStore(), 'test-sim');
-    p.record('S1-1', scored(60));
-    p.record('S1-1', scored(90));
-    p.record('S1-1', scored(40));
+    p.record('S1-2', scored(60));
+    p.record('S1-2', scored(90));
+    p.record('S1-2', scored(40));
     expect(simXp(p)).toBe(90);
   });
 

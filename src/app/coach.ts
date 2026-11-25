@@ -30,6 +30,7 @@ export class Coach {
   readonly log = new Map<string, number>();
   private spilled = 0;
   private bySwing = 0;
+  private byTravel = 0;
   private returned = 0;
   private overflow = 0;
   private outside = 0;
@@ -43,6 +44,7 @@ export class Coach {
     this.notice = null;
     this.spilled = 0;
     this.bySwing = 0;
+    this.byTravel = 0;
     this.returned = 0;
     this.overflow = 0;
     this.outside = 0;
@@ -87,6 +89,8 @@ export class Coach {
       Math.abs(cmd.arm) + Math.abs(cmd.boom) + Math.abs(cmd.bucket) + Math.abs(cmd.swing) > 0.3 ||
       Math.abs(cmd.travelL) + Math.abs(cmd.travelR) > 0.3;
     const active = cmd.engineOn && !cmd.locked;
+    // 덤프트럭 현장에서는 쏟을 곳이 파란 구역이 아니라 트럭 적재함이다
+    const truck = sim.site.truck ?? null;
 
     // 장비가 꺼져 있거나 잠겨 있는데 레버를 움직이는 경우
     if (!active && anyLever) {
@@ -105,7 +109,17 @@ export class Coach {
     if (sim.reportCount !== this.reports) {
       this.reports = sim.reportCount;
       const r = sim.lastCycle!;
-      if (r.valid) {
+      if (truck) {
+        // 상차에서는 사이클 인정 여부를 따지지 않는다. 버킷 한 번의 결과만 알려 준다
+        if (r.dumped > 0.03) {
+          this.announce(
+            sim,
+            `버킷 한 번 완료 · 트럭에 ${r.dumped.toFixed(2)}m³ · 트럭 밖 ${r.spilled.toFixed(2)} · 들다가 떨어뜨림 ${r.returned.toFixed(2)}`,
+            'good',
+            7,
+          );
+        }
+      } else if (r.valid) {
         const parts = [
           `${r.time.toFixed(1)}초`,
           `쏟음 ${r.dumped.toFixed(2)}m³`,
@@ -125,9 +139,29 @@ export class Coach {
       this.spilled += sim.spilledBySwing - this.bySwing;
       this.bySwing = sim.spilledBySwing;
     }
+    // 흙을 실은 채 주행을 급하게 멈추거나 꺾어 흘림
+    if (sim.spilledByTravel - this.byTravel > 0.02) {
+      this.say(
+        sim,
+        'travel',
+        '흙을 가득 실은 채 고속 단으로 급하게 꺾어 흙을 흘렸습니다. 흙을 실었을 때는 저속 단으로 [Q] 다니세요',
+      );
+      this.byTravel = sim.spilledByTravel;
+      // 같은 흙을 다른 이유로 한 번 더 알리지 않는다
+      this.spilled = sim.spilled;
+      this.returned = sim.returned;
+    }
     // 구역 밖에 떨어뜨림: 버킷을 펴서 쏟은 것인지, 기울어서 흘린 것인지 구분한다
     if (sim.spilled - this.spilled > 0.03) {
-      if (opening) {
+      if (opening && truck) {
+        this.say(
+          sim,
+          'outside',
+          b.zone === 'dump'
+            ? `버킷이 낮아 흙이 적재함 벽에 막혀 트럭 밖에 떨어졌습니다. 붐을 더 올린 뒤 ${key('boomUp')} 펴세요`
+            : '트럭 밖에 흙을 쏟았습니다. 바닥의 원 표시가 적재함 안에 들어온 뒤 버킷을 펴세요',
+        );
+      } else if (opening) {
         this.say(sim, 'outside', '구역 밖에 흙을 쏟았습니다. 바닥의 원 표시가 파란 구역 안에 들어온 뒤 버킷을 펴세요');
       } else if (cmd.arm < -0.05) {
         this.say(
@@ -142,7 +176,13 @@ export class Coach {
     }
     // 노란 구역 밖의 흙을 담는 중
     if (sim.capturedOutside - this.outside > 0.05) {
-      this.say(sim, 'source', '노란 구역 밖의 흙을 담고 있습니다. 노란 구역 안에서 파야 사이클로 셉니다');
+      this.say(
+        sim,
+        'source',
+        truck
+          ? '노란 구역 밖의 흙을 담고 있습니다. 노란 구역 안에서 파세요 (구역 밖에서 판 흙은 감점)'
+          : '노란 구역 밖의 흙을 담고 있습니다. 노란 구역 안에서 파야 사이클로 셉니다',
+      );
       this.outside = sim.capturedOutside;
     }
     // 들어 올린 뒤 노란 구역에 떨어뜨림 (일부러 펴는 중이면 알리지 않는다)
@@ -179,7 +219,7 @@ export class Coach {
     this.wasTouching = b.touching;
 
     // 쏟으려는데 버킷이 흙더미에 닿은 경우
-    if (active && opening && b.zone === 'dump' && b.touching && b.fill > 0.08) {
+    if (active && opening && !truck && b.zone === 'dump' && b.touching && b.fill > 0.08) {
       this.say(sim, 'low', `버킷이 땅(흙더미)에 닿아 더 펴지지 않습니다. 붐을 올리세요 ${key('boomUp')}`);
     }
     // 버킷을 땅에 박은 채 주행하려는 경우
@@ -191,7 +231,9 @@ export class Coach {
       this.say(
         sim,
         'leftover',
-        `버킷에 흙이 ${sim.load.toFixed(2)}m³ 남아 있어 사이클이 아직 끝나지 않았습니다. 파란 구역에서 마저 쏟으세요`,
+        truck
+          ? `버킷에 흙이 ${sim.load.toFixed(2)}m³ 남아 있습니다. 트럭 위에서 버킷을 끝까지 펴서 다 쏟고 돌아오세요`
+          : `버킷에 흙이 ${sim.load.toFixed(2)}m³ 남아 있어 사이클이 아직 끝나지 않았습니다. 파란 구역에서 마저 쏟으세요`,
         'warn',
         6,
         10,

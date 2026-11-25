@@ -113,8 +113,11 @@ export function guideText(s: GuideState): string {
   if (s.demo) {
     return `시범 운전 중: ${s.demo}<small>아래 레버 표시를 보며 순서를 익히세요 · ${kbd('G')} 중지 · 시범은 엔진 다이얼을 10으로 올려 빠르게 보여 줍니다</small>`;
   }
-  if (!s.belt && !s.engineOn) {
-    return `${kbd('B')} 키를 눌러 안전벨트를 매세요<small>운전석에 앉으면 가장 먼저 할 일입니다</small>`;
+  // 안전벨트는 맬 때까지 계속 알려 준다 (시동을 먼저 걸어도 사라지지 않는다)
+  if (!s.belt) {
+    return `${kbd('B')} 키를 눌러 안전벨트를 매세요<small>${
+      s.engineOn ? '안전벨트를 매지 않고 장비를 움직이면 실격입니다' : '운전석에 앉으면 가장 먼저 할 일입니다'
+    }</small>`;
   }
   if (!s.engineOn) return `${kbd('R')} 키를 눌러 시동을 거세요`;
   if (s.locked) {
@@ -135,6 +138,9 @@ export function guideText(s: GuideState): string {
   // 버킷을 펴서 쏟기 시작했으면 버킷이 빌 때까지 "쏟기" 단계다
   const dumping = sim.dumpingStarted && b.fill > 0.03;
   const stuck = 1 - sim.soilResist >= 0.85 && b.touching;
+  // 덤프트럭 현장에서는 쏟을 곳이 트럭 적재함이고, 적재함 벽보다 넉넉히 높이 들어야 한다
+  const truck = sim.site.truck ?? null;
+  const dumpName = truck ? '트럭 적재함' : '파란 구역';
 
   /** 구역 쪽으로 선회하거나, 방향이 맞으면 암으로 거리를 맞추게 한다 */
   const goTo = (zone: Zone, name: string, step: string, arrive: string): { text: string; reach: boolean } => {
@@ -145,7 +151,11 @@ export function guideText(s: GuideState): string {
     const reach = p.tipR < t.dist ? act('암을 펴서', 'armOut') : act('암을 당겨서', 'armIn');
     return { text: `${step} 방향은 맞습니다. ${reach} 버킷을 ${name} 위로 옮기세요`, reach: true };
   };
-  const reachNote = `암을 펴면 버킷이 내려가고 앞으로 기웁니다. ${act('붐을 올리면서', 'boomUp')} 하세요`;
+  // 붐이 이미 끝까지 올라가 있으면 버킷을 오므려서 기우는 것을 막는 수밖에 없다
+  const reachNote =
+    sim.boom.stroke > 0.95
+      ? `암을 펴면 버킷이 앞으로 기웁니다. ${act('버킷을 조금씩 오므리면서', 'curl')} 천천히 펴세요`
+      : `암을 펴면 버킷이 내려가고 앞으로 기웁니다. ${act('붐을 올리면서', 'boomUp')} 하고, 기울면 ${act('버킷을 조금 오므리세요', 'curl')}`;
 
   // ── ⑦ 복귀 ──
   if (!dumping && (sim.awaitingReturn || (!loaded && !inDig))) {
@@ -160,13 +170,15 @@ export function guideText(s: GuideState): string {
   // ── ⑥ 쏟기 ──
   if (dumping || (loaded && inDump)) {
     if (!inDump) {
-      const go = goTo(sim.site.dumpZone, '파란 구역', '⑥', ' 위로 가서 남은 흙을 쏟으세요');
+      const go = goTo(sim.site.dumpZone, dumpName, '⑥', ' 위로 가서 남은 흙을 쏟으세요');
       return line(go.text, go.reach ? reachNote : '버킷에 흙이 남아 있습니다');
     }
     if (b.touching || b.pinAbove < DUMP_CLEARANCE) {
       return line(
         `④ ${act('붐을 더 올리세요', 'boomUp')}`,
-        '쏟으려면 버킷이 흙더미보다 충분히 높아야 합니다. 낮으면 버킷을 펼 때 날이 땅에 닿아 다 펴지지 않습니다',
+        truck
+          ? `버킷을 펴면 날이 ${DUMP_CLEARANCE}m쯤 내려갑니다. 그래도 적재함 벽(${truck.bedTop}m)보다 높아야 흙이 트럭 안에 떨어집니다`
+          : '쏟으려면 버킷이 흙더미보다 충분히 높아야 합니다. 낮으면 버킷을 펼 때 날이 땅에 닿아 다 펴지지 않습니다',
       );
     }
     if (sim.bucket.stroke < 0.03) {
@@ -233,16 +245,28 @@ export function guideText(s: GuideState): string {
   if (b.above < 1.0 && b.openUp < FACING_UP && sim.bucket.stroke < 0.95) {
     return line(
       `③ ${act('버킷을 오므려', 'curl')} 입구가 '위'를 보면 멈추세요`,
-      `지금: ${b.facing}. 덜 오므리면 들어 올릴 때 흘리고, 너무 오므리면 뒤로 넘어가 흘립니다`,
+      `지금: ${b.facing}. ${
+        1 - sim.soilResist > 0.6 ? '흙에 막혀 천천히 오므려집니다. 키를 계속 누르고 있으세요. ' : ''
+      }덜 오므리면 들어 올릴 때 흘리고, 너무 오므리면 뒤로 넘어가 흘립니다`,
     );
   }
-  if (b.above < 1.5) {
+  if (truck) {
+    // 트럭 위로 가기 전에 다 올린다. 낮은 채 선회하면 적재함에 부딪힌다
+    const pin = p.baseY + p.wristY;
+    const need = truck.bedTop + DUMP_CLEARANCE;
+    if (pin < need) {
+      return line(
+        `④ ${act('붐을 올리세요', 'boomUp')} <small class="inline">버킷 높이 ${(Math.floor(pin * 10) / 10).toFixed(1)}m → ${need.toFixed(1)}m 이상</small>`,
+        `적재함 벽(${truck.bedTop}m)보다 넉넉히 높아야 부딪히지 않고 버킷을 펼 자리도 생깁니다. 다 올린 뒤에 선회하세요. 기울면 ${act('조금 더 오므리세요', 'curl')}`,
+      );
+    }
+  } else if (b.above < 1.5) {
     return line(
       `④ ${act('붐을 올리세요', 'boomUp')}`,
       `붐을 올리면 버킷이 앞으로 기웁니다. 기울면 ${act('조금 더 오므리세요', 'curl')}`,
     );
   }
-  const go = goTo(sim.site.dumpZone, '파란 구역', '⑤', ' 위로 가세요');
+  const go = goTo(sim.site.dumpZone, dumpName, '⑤', ' 위로 가세요');
   return line(
     go.text,
     go.reach

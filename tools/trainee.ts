@@ -25,6 +25,7 @@ import { DT } from '../src/core/sim/command';
 import { clamp, DEG } from '../src/core/sim/math';
 import { LEVELS, taskById, TASKS } from '../src/curriculum/excavatorLicense';
 import { CycleObjective } from '../src/curriculum/objectives/cycleObjective';
+import { TruckObjective } from '../src/curriculum/objectives/truckObjective';
 import { SIM_LEVEL_NAMES, STAGES, stageById } from '../src/curriculum/simulatorMode';
 import { ExcavatorSim } from '../src/equipment/excavator/excavatorSim';
 import { TRAINING_YARD } from '../src/sites/site';
@@ -101,8 +102,8 @@ function run(keys: Set<string>, seconds: number, horn = false): void {
     const cmd = leversToCommand(ramp.axes, pattern, switches);
     sim.step(cmd);
     const before = coach.notice?.text;
-    // 앱과 같게: 굴착 코치는 자유 연습과 굴착 과제에서만 쓴다
-    if (!task || objective instanceof CycleObjective) coach.update(sim, cmd, pattern);
+    // 앱과 같게: 굴착 코치는 자유 연습과 굴착·상차 과제에서만 쓴다
+    if (!task || objective instanceof CycleObjective || objective instanceof TruckObjective) coach.update(sim, cmd, pattern);
     else coach.expire(sim);
     const now = coach.notice?.text;
     if (now && now !== before) notices.push(now);
@@ -119,7 +120,7 @@ function run(keys: Set<string>, seconds: number, horn = false): void {
 function describe(): string {
   const p = sim.pose();
   const b = bucketView(sim);
-  const zone = { dig: '노란 구역(굴착) 위', dump: '파란 구역(덤프) 위', none: '구역 밖' }[b.zone];
+  const zone = { dig: '노란 구역(굴착) 위', dump: sim.site.truck ? '트럭 적재함 위' : '파란 구역(덤프) 위', none: '구역 밖' }[b.zone];
   const cap = sim.spec.bucketCapacity;
   const height = b.touching
     ? b.tipY < -0.03
@@ -158,7 +159,7 @@ function describe(): string {
   }
   lines.push(
     `  [측정] 담긴 흙 ${sim.load.toFixed(2)}m³ (${pct(sim.load / cap)}) | 굴착 저항 ${resistWord}(${pct(resist)}) | 동시 조작으로 느려짐: 이 단계 중 최대 ${pct(maxShareLoss)}`,
-    `  [측정] 파란 구역에 쏟음 ${sim.dumped.toFixed(2)}m³ | 구역 밖에 흘림 ${sim.spilled.toFixed(2)}m³ | 들다가 떨어뜨림 ${sim.returned.toFixed(2)}m³`,
+    `  [측정] ${sim.site.truck ? '트럭에 실음' : '파란 구역에 쏟음'} ${sim.dumped.toFixed(2)}m³ | 구역 밖에 흘림 ${sim.spilled.toFixed(2)}m³ | 들다가 떨어뜨림 ${sim.returned.toFixed(2)}m³`,
     `  [측정] 완료 사이클 ${sim.cycles}회 | 이번 사이클 ${sim.cycleTime.toFixed(1)}초 | 직전 / 최단 ${sim.cycles === 0 ? '—' : `${sim.lastCycleTime.toFixed(1)} / ${sim.bestCycleTime.toFixed(1)}초`}`,
   );
   if (guide) lines.push(`  [화면 안내] ${guide}`);

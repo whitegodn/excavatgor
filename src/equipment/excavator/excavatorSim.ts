@@ -100,6 +100,12 @@ export class ExcavatorSim {
   spilled = 0;
   /** 그중 선회를 급하게 꺾어서 흘린 양 */
   spilledBySwing = 0;
+  /** 흙을 실은 채 주행을 급하게 멈추거나 꺾어서 흘린 양 */
+  spilledByTravel = 0;
+  /** 차체의 좌우 기울기(오른쪽이 높으면 +). 0.2면 약 11° */
+  roll = 0;
+  private prevV = 0;
+  private prevYaw = 0;
   /** 들다가 굴착 구역에 도로 떨어뜨린 흙 */
   returned = 0;
   overflow = 0;
@@ -310,17 +316,35 @@ export class ExcavatorSim {
     const grade = (this.terrain.heightAt(this.x + hx, this.z + hz) - this.terrain.heightAt(this.x - hx, this.z - hz)) / 3;
     const slope = clamp(1 - 1.6 * grade * Math.sign(this.trackL + this.trackR), 0.4, 1.25);
     const top = sp.travelMax * (cmd.fast ? 1.8 : 1) * g * sTravel * slope;
-    this.trackL += clamp(S.travelL * top - this.trackL, -ta, ta);
-    this.trackR += clamp(S.travelR * top - this.trackR, -ta, ta);
+    // 레버를 놓으면 유압 모터가 바로 버텨 준다: 가속보다 훨씬 빨리 멈춘다
+    const follow = (track: number, target: number): number => {
+      const braking = Math.abs(target) < Math.abs(track) || target * track < 0;
+      const lim = braking ? Math.max(sp.travelBrakeMin, sp.travelBrakeGain * Math.abs(track)) * DT : ta;
+      return track + clamp(target - track, -lim, lim);
+    };
+    this.trackL = follow(this.trackL, S.travelL * top);
+    this.trackR = follow(this.trackR, S.travelR * top);
     if (Math.abs(this.trackL) < 1e-6 && S.travelL === 0) this.trackL = 0;
     if (Math.abs(this.trackR) < 1e-6 && S.travelR === 0) this.trackR = 0;
     const v = (this.trackL + this.trackR) / 2;
     // 좌우 궤도를 반대로 돌리는 제자리 회전은 궤도가 미끄러져 계산보다 느리다
     const slip = this.trackL * this.trackR < 0 ? sp.spinTurnSlip : 1;
-    this.heading = wrapAngle(this.heading + ((this.trackL - this.trackR) / sp.trackGauge) * slip * DT);
+    const yaw = ((this.trackL - this.trackR) / sp.trackGauge) * slip;
+    this.heading = wrapAngle(this.heading + yaw * DT);
+    // 차체가 받는 충격: 앞뒤 가감속 + 회전이 갑자기 바뀌는 정도
+    const travelLin = Math.abs(v - this.prevV) / DT;
+    const travelYaw = Math.abs(yaw - this.prevYaw) / DT;
+    this.prevV = v;
+    this.prevYaw = yaw;
     const lim = this.site.terrainSize / 2 - 4;
-    this.x = clamp(this.x + Math.sin(this.heading) * v * DT, -lim, lim);
-    this.z = clamp(this.z + Math.cos(this.heading) * v * DT, -lim, lim);
+    // 비탈을 비스듬히 타면 궤도가 옆으로 밀려 아래쪽으로 미끄러진다 (움직이는 동안만)
+    const lx = Math.cos(this.heading);
+    const lz = -Math.sin(this.heading);
+    const half = sp.trackGauge / 2;
+    this.roll = (this.terrain.heightAt(this.x + lx * half, this.z + lz * half) - this.terrain.heightAt(this.x - lx * half, this.z - lz * half)) / sp.trackGauge;
+    const slide = Math.abs(this.roll) > 0.06 ? -this.roll * sp.sideSlip * Math.min(1, Math.abs(v) / 0.4) : 0;
+    this.x = clamp(this.x + (Math.sin(this.heading) * v + lx * slide) * DT, -lim, lim);
+    this.z = clamp(this.z + (Math.cos(this.heading) * v + lz * slide) * DT, -lim, lim);
     this.y += (this.groundUnderTracks() - this.y) * Math.min(1, DT / 0.2);
 
     // 7) 버킷과 흙
@@ -371,6 +395,16 @@ export class ExcavatorSim {
         const before = this.spilled;
         this.drop(d, p1.wristR + this.midC * Math.cos(p1.a3), p1.wristY, p1);
         this.spilledBySwing += this.spilled - before;
+      }
+    }
+    // 흙을 가득 실은 채 고속 단에서 급하게 꺾으면 흔들려서 흘린다. 저속 단에서는 흘리지 않는다
+    const shaky = this.load - 0.7 * cap;
+    if (shaky > 0) {
+      const a = travelLin + 0.5 * travelYaw * p1.wristR;
+      if (a > sp.travelSpillAccel) {
+        const d = Math.min(shaky, (a / sp.travelSpillAccel - 1) * cap * 2.0 * DT);
+        this.drop(d, p1.wristR + this.midC * Math.cos(p1.a3), p1.wristY, p1);
+        this.spilledByTravel += d;
       }
     }
     if (this.load < 1e-6) this.load = 0;

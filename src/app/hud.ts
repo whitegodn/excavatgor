@@ -23,6 +23,10 @@ export interface HudState {
   /** 가운데 위 "지금 할 일" 안내문(HTML). 없으면 빈 문자열 */
   prompt: string;
   notice: Notice | null;
+  /** 지금 현장의 이름 */
+  siteName: string;
+  /** 굴착 측정(담긴 흙, 굴착 저항, 사이클)을 보여 줄 것인가. 주행 과제에서는 숨긴다 */
+  showDig: boolean;
   /** 과제 중이면 과제 이름과 진행 상황, 자유 연습이면 null */
   task: { title: string; lines: ProgressLine[]; time: number; limit: number | null } | null;
   /** 지금 향해야 할 목표 지점 */
@@ -50,7 +54,7 @@ const TV_SIZE = 150;
 const TEMPLATE = `
 <div id="left">
   <div id="status" class="box">
-    <h1>굴착기 시뮬레이터 <small>평지 연습장</small></h1>
+    <h1>굴착기 시뮬레이터 <small id="siteName">평지 연습장</small></h1>
     <div class="chips">
       <span class="chip" id="chipBelt"></span>
       <span class="chip" id="chipEngine"></span>
@@ -115,6 +119,7 @@ const TEMPLATE = `
     <div id="taskLines"></div>
     <div class="sep"></div>
   </div>
+  <div id="digMetrics">
   <h2>측정</h2>
   <div class="row"><span>버킷에 담긴 흙</span><span id="mLoad"></span></div>
   <div class="bar"><i id="barLoad"></i></div>
@@ -126,9 +131,10 @@ const TEMPLATE = `
   <div class="row"><span>직전 / 최단</span><span id="mLast"></span></div>
   <div class="row"><span>완료한 사이클</span><span id="mCount"></span></div>
   <div class="sep"></div>
-  <div class="row"><span>파란 구역에 쏟음</span><span id="mDumped"></span></div>
+  <div class="row"><span id="lDumped">파란 구역에 쏟음</span><span id="mDumped"></span></div>
   <div class="row"><span>구역 밖에 흘림</span><span id="mSpilled"></span></div>
   <div class="row"><span>들다가 떨어뜨림</span><span id="mReturned"></span></div>
+  </div>
   <div id="dev" class="hidden">
     <div class="sep"></div>
     <div class="row"><span>부피 보존 오차</span><span id="mError"></span></div>
@@ -211,7 +217,7 @@ const TEMPLATE = `
   </div>
   <div class="keys">
     <span><kbd>B</kbd> 안전벨트</span><span><kbd>R</kbd> 시동</span><span><kbd>Shift</kbd> 미세 조작</span>
-    <span><kbd>Q</kbd> 주행 고속·저속</span><span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span><span><kbd>Esc</kbd> 일시 정지·메뉴</span>
+    <span><kbd>Q</kbd> 주행 고속·저속</span><span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span><span><kbd>Backspace</kbd> 다시 시작</span><span><kbd>Esc</kbd> 일시 정지·메뉴</span>
   </div>
 </div>
 <div id="tags">
@@ -447,7 +453,8 @@ export class Hud {
     // 주행으로 차체를 돌렸으면 차체 방향도 함께 보여 준다
     el.roSwing.textContent =
       (Math.abs(swing) < 0.5 ? '정면' : side(swing)) + (Math.abs(heading) < 0.5 ? '' : ` · 차체 ${side(heading)}`);
-    el.roZone.textContent = b.zone === 'dig' ? '노란 구역 위' : b.zone === 'dump' ? '파란 구역 위' : '구역 밖';
+    el.roZone.textContent = b.zone === 'dig' ? '노란 구역 위' : b.zone === 'dump' ? (sim.site.truck ? '트럭 적재함 위' : '파란 구역 위') : '구역 밖';
+    el.lDumped.textContent = sim.site.truck ? '트럭에 실음' : '파란 구역에 쏟음';
     el.roZone.className = b.zone;
 
     const stroke = (node: HTMLElement, v: number) => {
@@ -510,6 +517,8 @@ export class Hud {
 
     this.updatePose(sim, s.focus, s.hurdle);
 
+    el.siteName.textContent = s.siteName;
+    el.digMetrics.classList.toggle('hidden', !s.showDig);
     el.taskBox.classList.toggle('hidden', !s.task);
     if (s.task) {
       const t = s.task;

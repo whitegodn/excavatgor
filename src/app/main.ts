@@ -15,6 +15,8 @@ import { type Command, DT, SIM_HZ } from '../core/sim/command';
 import { clamp } from '../core/sim/math';
 import { LEVELS, taskById, TASKS } from '../curriculum/excavatorLicense';
 import { CycleObjective } from '../curriculum/objectives/cycleObjective';
+import { DriveObjective } from '../curriculum/objectives/driveObjective';
+import { TruckObjective } from '../curriculum/objectives/truckObjective';
 import { Progress } from '../curriculum/progress';
 import { nextRank, SIM_LEVEL_NAMES, simRank, simXp, STAGES, stageById, stageUnlocked, stars } from '../curriculum/simulatorMode';
 import type { Objective, TaskDef } from '../curriculum/task';
@@ -379,8 +381,8 @@ function tick(): void {
     if (demo.done) endDemo();
     return;
   }
-  // 굴착 코치는 자유 연습과 굴착 과제에서만 쓴다. 공중 조작·절차 과제에는 맞지 않는 조언이다
-  if (!task || objective instanceof CycleObjective) coach.update(sim, cmd, pattern);
+  // 굴착 코치는 자유 연습과 굴착·상차 과제에서만 쓴다. 공중 조작·절차·주행 과제에는 맞지 않는 조언이다
+  if (!task || objective instanceof CycleObjective || objective instanceof TruckObjective) coach.update(sim, cmd, pattern);
   else coach.expire(sim);
   if (objective) {
     objective.update(sim, cmd);
@@ -448,6 +450,8 @@ function draw(): void {
     fine: keyboard.fine && !demo,
     prompt: promptText(),
     notice: coach.notice,
+    siteName: sim.site.name,
+    showDig: !(objective instanceof DriveObjective),
     tags: world.cabTags(),
     task:
       task && objective

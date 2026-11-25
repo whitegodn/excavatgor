@@ -1,7 +1,7 @@
 import { ramp, scoreItem, type ScoreItem } from '../core/scoring/score';
 import { FLAT_COURSE, HAUL_SITE, HILL_COURSE, ROAD_COURSE, TRUCK_YARD } from '../sites/simSites';
-import { CycleObjective } from './objectives/cycleObjective';
 import { type Checkpoint, DriveObjective } from './objectives/driveObjective';
+import { HaulObjective } from './objectives/haulObjective';
 import { TruckObjective } from './objectives/truckObjective';
 import type { Progress } from './progress';
 import type { Metrics, TaskDef } from './task';
@@ -32,25 +32,28 @@ export const SIM_LEVEL_NAMES: Record<number, string> = {
   3: '도로와 본 작업',
 };
 
-/** 주행 스테이지 채점: 완주 50, 시간 40, 안전 10 */
+/** 주행 스테이지 채점: 완주 50, 시간 30, 주행 품질 20 */
 function driveScore(par: number, zero: number) {
   return (m: Metrics): ScoreItem[] => {
     const all = m.completed >= m.total;
+    const faults: string[] = [];
+    if (m.drags > 0) faults.push(`버킷을 끌며 주행 ${m.drags}회 (1회 5점)`);
+    if (m.offRoad >= 1) faults.push(`도로 이탈 ${m.offRoad.toFixed(0)}초 (1초 1점)`);
     return [
       scoreItem('course', '코스', 50, m.completed / m.total, `깃발 ${m.completed} / ${m.total}개`),
       scoreItem(
         'time',
         '시간',
-        40,
+        30,
         all ? ramp(m.time, par, zero) : 0,
         all ? `${m.time.toFixed(1)}초 (${par}초 이내 만점, ${zero}초부터 0점)` : '완주하지 못해 0점',
       ),
       scoreItem(
-        'safety',
-        '안전',
-        10,
-        m.belt > 0 ? 0 : (10 - 5 * m.drags) / 10,
-        m.belt > 0 ? '안전벨트 미착용' : m.drags === 0 ? '위반 없음' : `버킷을 끌며 주행 ${m.drags}회 (1회 5점)`,
+        'quality',
+        '주행 품질',
+        20,
+        m.belt > 0 ? 0 : Math.max(0, 20 - 5 * m.drags - Math.floor(m.offRoad)) / 20,
+        m.belt > 0 ? '안전벨트 미착용' : faults.length ? faults.join(', ') : '감점 없음',
       ),
     ];
   };
@@ -60,14 +63,17 @@ function driveScore(par: number, zero: number) {
 function truckScore(par: number, limit: number) {
   return (m: Metrics): ScoreItem[] => {
     const all = m.loaded >= m.target;
+    const outside = m.outside > 0.05 ? `, 노란 구역 밖에서 판 흙 ${m.outside.toFixed(2)}m³` : '';
     return [
       scoreItem('load', '적재량', 40, ramp(m.loaded, m.target, m.target * 0.3), `트럭에 ${m.loaded.toFixed(2)} / ${m.target.toFixed(1)}m³`),
       scoreItem(
         'clean',
         '흘림',
         20,
-        m.loaded < 0.05 ? 0 : ramp(m.spilled + m.returned, 0.1 * m.target, 0.6 * m.target),
-        m.loaded < 0.05 ? '실은 흙이 없어 0점' : `트럭 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³`,
+        m.loaded < 0.05 ? 0 : ramp(m.spilled + m.returned + m.outside, 0.1 * m.target, 0.6 * m.target),
+        m.loaded < 0.05
+          ? '실은 흙이 없어 0점'
+          : `트럭 밖 ${m.spilled.toFixed(2)}m³, 들다가 떨어뜨림 ${m.returned.toFixed(2)}m³${outside}`,
       ),
       scoreItem(
         'time',
@@ -116,35 +122,19 @@ const FLAT_GATES: Checkpoint[] = FLAT_COURSE.route!;
 const HILL_GATES: Checkpoint[] = HILL_COURSE.route!;
 const ROAD_GATES: Checkpoint[] = ROAD_COURSE.route!;
 
-const DRIVE_PASS = '60점 이상. 코스 50, 시간 40, 안전 10. 안전벨트 없이 움직이면 실격.';
+const DRIVE_PASS = '60점 이상. 코스 50, 시간 30, 주행 품질 20(버킷 끌림, 도로 이탈 감점). 안전벨트 없이 움직이면 실격.';
+const TRUCK_PASS = '60점 이상. 적재량 40, 흘림 20, 시간 25, 안전 15. 트럭에 3번 부딪히면 실격.';
 
 export const STAGES: TaskDef[] = [
   {
     id: 'S1-1',
     level: 1,
-    title: '덤프트럭에 싣기',
-    summary: '흙을 파서 왼쪽 덤프트럭에 1.5m³ 싣기',
-    brief: [
-      '노란 구역의 흙을 파서 왼쪽에 서 있는 덤프트럭에 1.5m³(버킷 세 번쯤)를 싣습니다.',
-      '적재함 벽은 높이 1.9m입니다. 버킷을 그보다 높이 든 다음 트럭 위로 선회하세요. 낮게 넣으면 트럭에 부딪힙니다.',
-      '화면 위쪽 ①~⑦ 안내가 그대로 나옵니다. 트럭 위에서는 "지면 위" 높이가 적재함 윗면 기준으로 나옵니다.',
-    ],
-    passText: '60점 이상. 적재량 40, 흘림 20, 시간 25, 안전 15. 트럭에 3번 부딪히면 실격.',
-    coach: 'full',
-    timeLimit: 300,
-    passScore: 60,
-    site: TRUCK_YARD,
-    create: () => new TruckObjective(1.5, 300),
-    score: truckScore(110, 300),
-  },
-  {
-    id: 'S1-2',
-    level: 1,
     title: '깃발 따라 주행',
     summary: '평지에서 깃발 5개를 차례로 지나기',
     brief: [
-      '방향키로 장비를 몰아 노란 공(깃발) 5개를 차례로 지나갑니다.',
+      '방향키로 장비를 몰아 깃발(공중에 뜬 노란 공) 5개를 차례로 지나갑니다.',
       '↑ 전진, ↓ 후진, ← → 제자리 회전. ↑와 ←를 함께 누르면 돌면서 전진합니다. Q 키로 고속 단을 켭니다.',
+      '회전은 키를 놓은 뒤에도 조금(저속 5°, 고속 10°쯤) 더 돕니다. 조금 미리 놓으세요.',
       '주행하기 전에 붐을 올려 버킷을 드세요. 버킷을 땅에 끌면 감점입니다.',
     ],
     passText: DRIVE_PASS,
@@ -153,7 +143,25 @@ export const STAGES: TaskDef[] = [
     passScore: 60,
     site: FLAT_COURSE,
     create: () => new DriveObjective(FLAT_GATES, 2.5, 300),
-    score: driveScore(100, 260),
+    score: driveScore(75, 220),
+  },
+  {
+    id: 'S1-2',
+    level: 1,
+    title: '덤프트럭에 싣기',
+    summary: '흙을 파서 왼쪽 덤프트럭에 1.2m³ 싣기',
+    brief: [
+      '노란 구역의 흙을 파서 왼쪽에 서 있는 덤프트럭에 1.2m³(버킷 서너 번)를 싣습니다.',
+      '적재함 벽은 높이 1.9m입니다. 버킷을 3.5m까지 든 다음에 트럭 위로 선회하세요. 낮게 넣으면 트럭에 부딪힙니다.',
+      '화면 위쪽 ①~⑦ 안내가 그대로 나옵니다. 트럭 위에서는 "지면 위" 높이가 적재함 윗면 기준으로 나옵니다.',
+    ],
+    passText: TRUCK_PASS,
+    coach: 'full',
+    timeLimit: 300,
+    passScore: 60,
+    site: TRUCK_YARD,
+    create: () => new TruckObjective(1.2, 300),
+    score: truckScore(120, 300),
   },
   {
     id: 'S2-1',
@@ -162,15 +170,16 @@ export const STAGES: TaskDef[] = [
     summary: '언덕 코스를 넘어 깃발 5개 지나기',
     brief: [
       '언덕이 있는 코스입니다. 오르막에서는 느려지고 내리막에서는 조금 빨라집니다.',
-      '가파른 곳은 비스듬히 오르지 말고 정면으로 오르세요. 깃발 5개를 차례로 지나면 완주입니다.',
+      '비탈을 비스듬히 타면 장비가 아래쪽으로 미끄러져 길에서 밀려납니다. 가파른 곳은 정면으로 오르내리세요.',
+      '깃발 5개를 차례로 지나면 완주입니다.',
     ],
     passText: DRIVE_PASS,
     coach: 'full',
     timeLimit: 360,
     passScore: 60,
     site: HILL_COURSE,
-    create: () => new DriveObjective(HILL_GATES, 2.5, 360),
-    score: driveScore(130, 320),
+    create: () => new DriveObjective(HILL_GATES, 2.5, 360, { slopes: true }),
+    score: driveScore(85, 260),
   },
   {
     id: 'S2-2',
@@ -180,23 +189,25 @@ export const STAGES: TaskDef[] = [
     brief: [
       '이번에는 쏟을 곳(파란 구역)이 오른쪽으로 15m쯤 떨어져 있습니다. 선회만으로는 닿지 않습니다.',
       '흙을 담아 버킷을 든 채 장비를 몰고 가서 쏟고, 노란 구역으로 돌아오면 한 번입니다. 두 번 합니다.',
-      '흙을 실은 채 급하게 돌거나 멈추면 흘립니다.',
+      '화면 위쪽에 가야 할 구역의 방향과 거리가 나오고, 파란 구역 위에는 공이 떠 있습니다.',
+      '흙을 가득 실은 채 고속 단으로 달리다 급하게 꺾거나 제자리에서 돌면 흘립니다. 흙을 실었을 때는 저속 단으로 다니세요.',
     ],
     passText: '60점 이상. 운반량 40, 흘림 20, 시간 25, 안전 15.',
     coach: 'notices',
     timeLimit: 480,
     passScore: 60,
     site: HAUL_SITE,
-    create: () => new CycleObjective(2, 480),
+    create: () => new HaulObjective(2, 480),
     score: haulScore(220, 480),
   },
   {
     id: 'S3-1',
     level: 3,
     title: '도로 타임 어택',
-    summary: '긴 코스를 고속 단으로 한 바퀴',
+    summary: '도로를 벗어나지 않고 긴 코스를 고속 단으로 한 바퀴',
     brief: [
-      '깃발 8개를 이은 긴 코스를 한 바퀴 돕니다. Q 키로 고속 단을 켜야 만점 시간 안에 들어옵니다.',
+      '깃발 8개를 이은 긴 도로를 한 바퀴 돕니다. Q 키로 고속 단을 켜야 만점 시간 안에 들어옵니다.',
+      '아스팔트(폭 7m)를 벗어나 달리면 벗어난 시간만큼 감점입니다. 모퉁이를 질러가지 마세요.',
       '돌 때는 한쪽 방향키만 길게 누르지 말고, ↑를 누른 채 ← →를 톡톡 눌러 방향을 잡으세요.',
     ],
     passText: DRIVE_PASS,
@@ -204,8 +215,8 @@ export const STAGES: TaskDef[] = [
     timeLimit: 420,
     passScore: 60,
     site: ROAD_COURSE,
-    create: () => new DriveObjective(ROAD_GATES, 3, 420),
-    score: driveScore(170, 380),
+    create: () => new DriveObjective(ROAD_GATES, 3, 420, { roadHalfWidth: 3.5 }),
+    score: driveScore(125, 320),
   },
   {
     id: 'S3-2',
@@ -214,9 +225,9 @@ export const STAGES: TaskDef[] = [
     summary: '안내 없이 3m³를 6분 안에',
     brief: [
       '단계 안내 없이 덤프트럭에 3m³(버킷 여섯 번쯤)를 싣습니다. 실수 알림은 나옵니다.',
-      '같은 자리만 파면 깊어집니다. 좌우로 옮겨 가며 파세요.',
+      '같은 자리만 파면 깊어집니다. 좌우로 옮겨 가며 파세요. 노란 구역 밖에서 판 흙은 감점입니다.',
     ],
-    passText: '60점 이상. 트럭에 3번 부딪히면 실격.',
+    passText: TRUCK_PASS,
     coach: 'notices',
     timeLimit: 360,
     passScore: 60,

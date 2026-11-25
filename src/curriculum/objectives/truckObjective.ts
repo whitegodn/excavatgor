@@ -12,7 +12,9 @@ const TRUCK_HIT_FAIL = 3;
  */
 export class TruckObjective extends Objective {
   hits = 0;
-  private quietUntil = 0;
+  /** 버킷이 트럭에 닿아 있는 중인가. 떼었다가 다시 닿아야 새로 센다 */
+  private touching = false;
+  private clearTicks = 0;
 
   constructor(
     /** 실어야 하는 양(m³) */
@@ -28,19 +30,30 @@ export class TruckObjective extends Objective {
       const p = sim.pose();
       const zn = sim.site.dumpZone;
       const low = p.baseY + Math.min(p.tipY, p.wristY) - 0.15;
-      for (const r of [p.wristR, p.tipR]) {
-        const x = p.baseX + p.fwdX * r;
-        const z = p.baseZ + p.fwdZ * r;
-        const over = x > zn.x0 - 0.2 && x < zn.x1 + 0.2 && z > zn.z0 - 0.2 && z < zn.z1 + 0.2;
-        if (over && low < truck.bedTop && this.ticks >= this.quietUntil) {
+      const contact =
+        low < truck.bedTop &&
+        [p.wristR, p.tipR].some((r) => {
+          const x = p.baseX + p.fwdX * r;
+          const z = p.baseZ + p.fwdZ * r;
+          return x > zn.x0 - 0.2 && x < zn.x1 + 0.2 && z > zn.z0 - 0.2 && z < zn.z1 + 0.2;
+        });
+      if (contact) {
+        this.clearTicks = 0;
+        if (!this.touching) {
+          this.touching = true;
           this.hits++;
-          this.quietUntil = this.ticks + 2 * SIM_HZ;
-          this.say(`버킷이 트럭 적재함에 부딪혔습니다 (${this.hits}회). 적재함보다 높이 든 뒤 트럭 위로 가세요`, 'warn');
+          this.say(
+            `버킷이 트럭 적재함에 부딪혔습니다 (${this.hits}회). 붐을 올려 버킷을 적재함 벽(${truck.bedTop}m)보다 높이 빼세요`,
+            'warn',
+          );
           if (this.hits >= TRUCK_HIT_FAIL) {
             this.fatal = `버킷이 트럭에 ${TRUCK_HIT_FAIL}번 부딪혔습니다`;
             this.done = true;
           }
         }
+      } else if (this.touching && ++this.clearTicks > SIM_HZ) {
+        // 1초 넘게 떨어져 있어야 접촉이 끝난 것으로 본다
+        this.touching = false;
       }
     }
     if (sim.truckLoad >= this.target) {
@@ -60,7 +73,7 @@ export class TruckObjective extends Objective {
 
   lines(sim: ExcavatorSim): ProgressLine[] {
     return [
-      { label: '트럭에 실은 흙', value: `${sim.truckLoad.toFixed(2)} / ${this.target.toFixed(1)} m³` },
+      { label: '실은 흙', value: `${sim.truckLoad.toFixed(2)} / ${this.target.toFixed(1)} m³` },
       { label: '트럭 접촉', value: `${this.hits} 회`, tone: this.hits > 0 ? 'warn' : undefined },
     ];
   }
@@ -71,6 +84,7 @@ export class TruckObjective extends Objective {
       target: this.target,
       spilled: sim.spilled,
       returned: sim.returned,
+      outside: sim.capturedOutside,
       time: this.time,
       hits: this.hits,
       belt: this.beltViolations,

@@ -69,8 +69,10 @@ export abstract class Objective {
       if (!cmd.belt && anyLever(cmd) && this.beltViolations === 0) {
         this.beltViolations = 1;
         if (this.beltIsFatal) {
+          // 실격이면 그 자리에서 끝낸다. 계속하게 두면 실격인 줄 모르고 끝까지 한다
           this.fatal = '안전벨트를 매지 않고 장비를 움직였습니다';
-          this.say('안전벨트를 매지 않고 장비를 움직였습니다. 이 시도는 실격입니다 (Backspace로 다시 시작)', 'warn');
+          this.done = true;
+          this.say('안전벨트를 매지 않고 장비를 움직였습니다. 이 시도는 실격입니다', 'warn');
         } else {
           this.say('안전벨트를 매지 않고 장비를 움직였습니다 (감점)', 'warn');
         }

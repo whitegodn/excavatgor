@@ -44,6 +44,13 @@ export interface ExcavatorSpec {
   swingCounterBrake: number;
   travelMax: number;
   travelAccel: number;
+  /** 비탈을 비스듬히 탈 때 아래쪽으로 미끄러지는 속도(m/s, 좌우 기울기 1당) */
+  sideSlip: number;
+  /** 레버를 놓았을 때의 제동(m/s²): 최소값과, 속도에 비례하는 몫(1/s) */
+  travelBrakeMin: number;
+  travelBrakeGain: number;
+  /** 흙을 실은 채 주행을 이보다 급하게 멈추거나 꺾으면(m/s²) 흙이 흘러내린다 */
+  travelSpillAccel: number;
   /** 제자리 회전 때 궤도 미끄러짐으로 줄어드는 회전 비율 */
   spinTurnSlip: number;
   trackGauge: number;
@@ -97,7 +104,11 @@ export const EXCAVATOR_14T: ExcavatorSpec = {
   swingBrake: 50 * DEG,
   swingCounterBrake: 90 * DEG,
   travelMax: 0.9,
-  travelAccel: 1.0,
+  travelAccel: 3.0,
+  sideSlip: 0.9,
+  travelBrakeMin: 1.5,
+  travelBrakeGain: 5.0,
+  travelSpillAccel: 6.0,
   spinTurnSlip: 0.55,
   trackGauge: 2.2,
   trackLength: 3.6,

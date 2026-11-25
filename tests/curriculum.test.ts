@@ -118,12 +118,14 @@ describe('공중 조작 과제 (L1, L2)', () => {
     expect(result.pass).toBe(true);
   });
 
-  it('안전벨트 없이 장비를 움직이면 목표를 다 통과해도 실격이다', () => {
+  it('안전벨트 없이 장비를 움직이면 그 자리에서 실격으로 끝난다', () => {
     const { task, sim, objective } = begin('L1-1');
     driveTargets(sim, objective as TargetObjective, false);
     const result = score(task, sim, objective);
     expect(objective.beltViolations).toBe(1);
-    expect(result.items[0].points).toBe(50);
+    expect(objective.done).toBe(true);
+    // 움직이자마자 끝나므로 1초도 지나지 않았다
+    expect(objective.time).toBeLessThan(1);
     expect(result.items.find((it) => it.id === 'safety')!.points).toBe(0);
     expect(result.fatal).not.toBeNull();
     expect(result.pass).toBe(false);
