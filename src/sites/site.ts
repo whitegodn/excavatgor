@@ -16,6 +16,12 @@ export interface Site {
   /** 흙을 쌓을 지정 구역 */
   dumpZone: Zone;
   start: { x: number; z: number; heading: number };
+  /** 처음 지형의 높이(m). 없으면 평지 */
+  shape?: (x: number, z: number) => number;
+  /** 덤프 구역이 덤프트럭 적재함인 경우: 적재함 벽 윗면 높이와 용량 */
+  truck?: { bedTop: number; capacity: number };
+  /** 굴착·덤프 구역을 쓰지 않는 현장(주행 코스) */
+  hideZones?: boolean;
 }
 
 export type ZoneKind = 'dig' | 'dump' | 'none';

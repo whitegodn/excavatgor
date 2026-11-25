@@ -8,6 +8,7 @@
  *   npx tsx tools/trainee.ts --list                                      과제 목록
  *
  *   B, R, F, P, +, -   한 번 누르는 스위치 키 (안전벨트, 시동, 안전레버, 레버 방식, 엔진 다이얼)
+ *   Q                  주행 고속 단 / 저속 단
  *   Space              경음기를 잠깐 울리기
  *   W+J 2.0            W와 J를 2초 동안 누르고 있기 (Shift, Up, Down, Left, Right 가능)
  *   wait 0.5           아무것도 누르지 않고 0.5초 기다리기
@@ -24,6 +25,7 @@ import { DT } from '../src/core/sim/command';
 import { clamp, DEG } from '../src/core/sim/math';
 import { LEVELS, taskById, TASKS } from '../src/curriculum/excavatorLicense';
 import { CycleObjective } from '../src/curriculum/objectives/cycleObjective';
+import { SIM_LEVEL_NAMES, STAGES, stageById } from '../src/curriculum/simulatorMode';
 import { ExcavatorSim } from '../src/equipment/excavator/excavatorSim';
 import { TRAINING_YARD } from '../src/sites/site';
 
@@ -58,6 +60,8 @@ if (args[0] === '--list') {
       console.log(`  ${t.id}  ${t.title}${t.quiz ? ' (퀴즈: 이 도구로는 할 수 없음)' : ''} — ${t.summary}`);
     }
   }
+  console.log('\n[시뮬레이터 모드 스테이지]');
+  for (const st of STAGES) console.log(`  ${st.id}  ${st.title} (레벨 ${st.level} ${SIM_LEVEL_NAMES[st.level] ?? ''}, ${st.site.name}) — ${st.summary}`);
   process.exit(0);
 }
 let taskId: string | null = null;
@@ -65,7 +69,7 @@ if (args[0] === '--task') {
   taskId = args[1] ?? null;
   args.splice(0, 2);
 }
-const task = taskId ? (taskById(taskId) ?? null) : null;
+const task = taskId ? (taskById(taskId) ?? stageById(taskId) ?? null) : null;
 if (taskId && (!task || task.quiz)) {
   console.log(`"${taskId}"는 이 도구로 할 수 있는 과제가 아닙니다. --list로 목록을 보세요.`);
   process.exit(1);
@@ -82,7 +86,7 @@ const ramp = new LeverRamp();
 const coach = new Coach();
 // 앱과 같게: 도움 없는 과제에서는 코치가 화면에 말하지 않고 기록만 한다
 coach.muted = task?.coach === 'none';
-const switches = { engineOn: false, locked: true, rpm: 8, belt: false, horn: false };
+const switches = { engineOn: false, locked: true, rpm: 8, belt: false, horn: false, fast: false };
 let pattern: LeverPattern = 'ISO';
 /** 한 단계 동안 화면에 떴던 알림과, 가장 컸던 동시 조작 감속 */
 let notices: string[] = [];
@@ -188,6 +192,7 @@ for (const raw of script.split(';')) {
     run(new Set(), Number(arg ?? 0.3), true);
   } else if (arg === undefined) {
     if (upper === 'B') switches.belt = !switches.belt;
+    else if (upper === 'Q') switches.fast = !switches.fast;
     else if (upper === 'R') {
       switches.engineOn = !switches.engineOn;
       if (!switches.engineOn) switches.locked = true;

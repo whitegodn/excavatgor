@@ -31,6 +31,8 @@ export class Autopilot {
   constructor(
     private cyclesLeft = 1,
     private readonly dumpSwing = -90 * DEG,
+    /** 흙을 싣고 선회할 때 버킷 날 끝의 높이(m) */
+    private readonly carry = 2.4,
   ) {}
 
   get phaseLabel(): string {
@@ -85,13 +87,13 @@ export class Autopilot {
       case 4:
         cmd.boom = 1;
         cmd.bucket = clamp((p.a3 / DEG + 178) / 10, -1, 1);
-        if (tipY >= 2.3) this.phase = 5;
+        if (tipY >= this.carry - 0.1) this.phase = 5;
         break;
       case 5: {
         cmd.swing = swingTo(this.dumpSwing);
         cmd.arm = clamp((p.wristR - 5.9) * 1.5, -1, 1);
         cmd.bucket = clamp((p.a3 / DEG + 178) / 10, -1, 1);
-        cmd.boom = clamp((2.4 - tipY) * 2, -1, 1);
+        cmd.boom = clamp((this.carry - tipY) * 2, -1, 1);
         const arrived = Math.abs(sim.swing - this.dumpSwing) < 1.5 * DEG && Math.abs(sim.swingVel) < 3 * DEG;
         if (arrived) this.phase = 6;
         break;
@@ -111,7 +113,7 @@ export class Autopilot {
         cmd.swing = swingTo(nextSwing);
         cmd.bucket = clamp((r3 / DEG + 60) / 8, -1, 1);
         // 돌아올 때도 버킷을 높이 든 채로 (선회 경로의 장애물을 넘는다)
-        cmd.boom = clamp((2.4 - tipY) * 2, -1, 1);
+        cmd.boom = clamp((this.carry - tipY) * 2, -1, 1);
         if (Math.abs(sim.swing - nextSwing) < 1.5 * DEG && Math.abs(sim.swingVel) < 3 * DEG) {
           this.cycle++;
           this.cyclesLeft--;

@@ -32,6 +32,8 @@ export interface MachineSwitches {
   rpm: number;
   belt: boolean;
   horn: boolean;
+  /** 주행 고속 단 */
+  fast?: boolean;
 }
 
 /** 장비 동작 하나. 레버 방식에 따라 누르는 키가 달라진다. */
@@ -73,6 +75,7 @@ export function leversToCommand(l: LeverAxes, pattern: LeverPattern, sw: Machine
     rpm: sw.rpm,
     belt: sw.belt,
     horn: sw.horn,
+    fast: sw.fast ?? false,
   };
 }
 

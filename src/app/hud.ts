@@ -15,6 +15,8 @@ export interface HudState {
   rpm: number;
   pattern: LeverPattern;
   inputMode: string;
+  /** 주행 고속 단 */
+  fast: boolean;
   camera: CameraMode;
   levers: LeverAxes;
   fine: boolean;
@@ -57,6 +59,7 @@ const TEMPLATE = `
       <span class="chip">레버 방식 <b id="chipPattern"></b></span>
       <span class="chip">입력 <b id="chipInput"></b></span>
       <span class="chip">시점 <b id="chipCam"></b></span>
+      <span class="chip">주행 <b id="chipFast"></b></span>
     </div>
   </div>
   <div id="pose" class="box">
@@ -208,7 +211,7 @@ const TEMPLATE = `
   </div>
   <div class="keys">
     <span><kbd>B</kbd> 안전벨트</span><span><kbd>R</kbd> 시동</span><span><kbd>Shift</kbd> 미세 조작</span>
-    <span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span><span><kbd>Esc</kbd> 일시 정지·메뉴</span>
+    <span><kbd>Q</kbd> 주행 고속·저속</span><span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span><span><kbd>Esc</kbd> 일시 정지·메뉴</span>
   </div>
 </div>
 <div id="tags">
@@ -242,6 +245,7 @@ const TEMPLATE = `
       <div class="k"><span>우 레버</span><span><kbd>I</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></span></div>
       <div class="k"><span>주행</span><span><kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd></span></div>
       <div class="k"><span>미세 조작 (누른 채)</span><span><kbd>Shift</kbd></span></div>
+      <div class="k"><span>주행 고속 단 / 저속 단</span><span><kbd>Q</kbd></span></div>
       <div class="k"><span>엔진 다이얼</span><span><kbd>+</kbd> / <kbd>−</kbd></span></div>
       <div class="k"><span>시점 전환 (운전석·외부)</span><span><kbd>V</kbd></span></div>
       <div class="k"><span>레버 방식 바꾸기</span><span><kbd>P</kbd></span></div>
@@ -471,6 +475,7 @@ export class Hud {
     el.chipPattern.textContent = s.pattern;
     el.chipInput.textContent = s.inputMode;
     el.chipCam.textContent = s.camera === 'cab' ? '운전석' : '외부';
+    el.chipFast.textContent = s.fast ? '고속' : '저속';
 
     const prompt = s.prompt;
     el.prompt.classList.toggle('hidden', prompt === '');

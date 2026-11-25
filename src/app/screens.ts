@@ -7,6 +7,7 @@ import type { CycleReport } from '../equipment/excavator/excavatorSim';
 export type ScreenAction =
   | { act: 'task'; id: string }
   | { act: 'free' }
+  | { act: 'tab'; tab: 'exam' | 'sim' }
   | { act: 'begin' }
   | { act: 'menu' }
   | { act: 'retry' }
@@ -30,6 +31,18 @@ const FAULT_LABEL: Record<string, string> = {
   spill: '세지 않음 · 구역 밖에 많이 흘림',
   source: '세지 않음 · 노란 구역 밖에서 팜',
 };
+
+/** 시뮬레이터 모드 메뉴에 필요한 값 */
+export interface SimMenu {
+  stages: readonly TaskDef[];
+  levelNames: Record<number, string>;
+  progress: Progress;
+  xp: number;
+  rank: { level: number; name: string; xp: number };
+  next: { level: number; name: string; xp: number } | null;
+  unlocked: (stage: TaskDef) => boolean;
+  stars: (score: number) => number;
+}
 
 /** 퀴즈를 풀 때마다 보기 순서를 섞는다 (정답 자리를 외워서 푸는 것을 막는다) */
 function shuffled(q: QuizQuestion): QuizQuestion {
@@ -57,6 +70,7 @@ export class Screens {
       if (act === 'choice') this.answer(Number(el.dataset.i));
       else if (act === 'quizNext') this.quizNext();
       else if (act === 'task') this.onAction({ act, id: el.dataset.id! });
+      else if (act === 'tab') this.onAction({ act, tab: el.dataset.tab as 'exam' | 'sim' });
       else this.onAction({ act } as ScreenAction);
     });
   }
@@ -93,24 +107,34 @@ export class Screens {
     if (this.quiz && this.quiz.answered === null) this.answer(n - 1);
   }
 
-  // ── 과정 메뉴 ──
+  // ── 처음 화면: 시험 코스 / 시뮬레이터 모드 ──
+  private tabs(tab: 'exam' | 'sim'): string {
+    return `
+      <h1>굴착기 시뮬레이터</h1>
+      <div class="tabs">
+        <button data-act="tab" data-tab="exam" class="${tab === 'exam' ? 'on' : ''}">
+          <b>시험 코스</b><small>굴착기운전기능사 실기 대비. 정해진 순서로 배우고 채점받기</small>
+        </button>
+        <button data-act="tab" data-tab="sim" class="${tab === 'sim' ? 'on' : ''}">
+          <b>시뮬레이터 모드</b><small>여러 현장의 스테이지를 깨며 레벨 올리기</small>
+        </button>
+      </div>`;
+  }
+
+  /** 시험 코스(① 자격증 취득 과정) 메뉴 */
   menu(levels: readonly LevelDef[], tasks: readonly TaskDef[], progress: Progress, pattern: LeverPattern): void {
     const next = progress.next();
     const badge = progress.badge();
     const done = tasks.filter((t) => progress.get(t.id)?.passed).length;
-    let html = `
+    let html = `${this.tabs('exam')}
       <header>
-        <div>
-          <h1>굴착기 시뮬레이터</h1>
-          <p class="sub">① 자격증 취득 과정 · 굴착기운전기능사 실기 대비</p>
-        </div>
+        <p class="sub">과제 ${done} / ${tasks.length} 통과 · 앞 과제를 합격해야 다음 과제가 열립니다</p>
         <div class="badge ${badge ? 'earned' : ''}">
           <b>${badge ? `${badge.tier} · ${badge.name}` : '등급 없음'}</b>
           <span>${badge ? '레벨 0~2 통과' : '레벨 0~2를 모두 통과하면 브론즈 등급'}</span>
         </div>
       </header>
-      <div class="bar"><i style="width:${Math.round((done / tasks.length) * 100)}%"></i></div>
-      <p class="sub">과제 ${done} / ${tasks.length} 통과</p>`;
+      <div class="bar"><i style="width:${Math.round((done / tasks.length) * 100)}%"></i></div>`;
     for (const lv of levels) {
       const list = tasks.filter((t) => t.level === lv.level);
       html += `<section><h2>레벨 ${lv.level} · ${esc(lv.name)} <small>${esc(lv.summary)}</small></h2>`;
@@ -137,11 +161,54 @@ export class Screens {
     }
     html += `
       <footer>
-        <button data-act="free">자유 연습 <small>과제 없이 연습장에서</small></button>
         <button data-act="pattern">레버 방식: ${pattern} <small>누르면 바뀜</small></button>
-        <button data-act="reset" class="quiet">기록 지우기</button>
+        <button data-act="reset" class="quiet">시험 코스 기록 지우기</button>
       </footer>
       <p class="hint"><kbd>Enter</kbd> 이어서 할 과제 시작${next ? ` (${next.id} ${esc(next.title)})` : ''}</p>`;
+    this.show(html, true);
+  }
+
+  /** 시뮬레이터 모드 메뉴: 내 레벨과 경험치, 레벨별 스테이지 */
+  simMenu(m: SimMenu, pattern: LeverPattern): void {
+    const span = m.next ? m.next.xp - m.rank.xp : 1;
+    const into = m.next ? m.xp - m.rank.xp : 1;
+    let primary = false;
+    let html = `${this.tabs('sim')}
+      <header>
+        <div class="rank">
+          <b>레벨 ${m.rank.level} · ${esc(m.rank.name)}</b>
+          <span>경험치 ${m.xp}${m.next ? ` · 레벨 ${m.next.level}(${esc(m.next.name)})까지 ${m.next.xp - m.xp}` : ' · 최고 레벨'}</span>
+        </div>
+        <p class="sub right">경험치는 스테이지별 최고 점수의 합입니다.<br>같은 스테이지를 다시 해서 점수를 올려도 쌓입니다.</p>
+      </header>
+      <div class="bar"><i style="width:${Math.round((into / span) * 100)}%"></i></div>`;
+    const levelsInUse = [...new Set(m.stages.map((st) => st.level))].sort((a, b) => a - b);
+    for (const lv of levelsInUse) {
+      const open = lv <= m.rank.level;
+      html += `<section><h2>레벨 ${lv} · ${esc(m.levelNames[lv] ?? '')} <small>${open ? '열림' : `레벨 ${lv}이 되면 열림`}</small></h2><div class="tasks">`;
+      for (const st of m.stages.filter((x) => x.level === lv)) {
+        const rec = m.progress.get(st.id);
+        const unlocked = m.unlocked(st);
+        const n = rec ? m.stars(rec.best) : 0;
+        const mark = rec ? `${'★'.repeat(n)}${'☆'.repeat(3 - n)} 최고 ${rec.best}점` : unlocked ? '새 스테이지' : '잠김';
+        const first = unlocked && !rec?.passed && !primary;
+        if (first) primary = true;
+        html += `
+          <button class="task ${rec?.passed ? 'passed' : unlocked ? 'open' : 'locked'}" data-act="task" data-id="${st.id}"
+            ${unlocked ? '' : 'disabled'} ${first ? 'data-primary' : ''}>
+            <span class="tid">${st.id}</span>
+            <span class="tt"><b>${esc(st.title)}</b><small>${esc(st.site.name)} · ${esc(st.summary)}</small></span>
+            <span class="tm">${mark}</span>
+          </button>`;
+      }
+      html += '</div></section>';
+    }
+    html += `
+      <footer>
+        <button data-act="free">자유 연습 <small>과제 없이 연습장에서 (시범 보기 G)</small></button>
+        <button data-act="pattern">레버 방식: ${pattern} <small>누르면 바뀜</small></button>
+        <button data-act="reset" class="quiet">시뮬레이터 모드 기록 지우기</button>
+      </footer>`;
     this.show(html, true);
   }
 

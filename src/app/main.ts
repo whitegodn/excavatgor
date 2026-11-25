@@ -16,6 +16,7 @@ import { clamp } from '../core/sim/math';
 import { LEVELS, taskById, TASKS } from '../curriculum/excavatorLicense';
 import { CycleObjective } from '../curriculum/objectives/cycleObjective';
 import { Progress } from '../curriculum/progress';
+import { nextRank, SIM_LEVEL_NAMES, simRank, simXp, STAGES, stageById, stageUnlocked, stars } from '../curriculum/simulatorMode';
 import type { Objective, TaskDef } from '../curriculum/task';
 import { Autopilot } from '../equipment/excavator/autopilot';
 import { ExcavatorSim } from '../equipment/excavator/excavatorSim';
@@ -42,11 +43,16 @@ const hud = new Hud(document.getElementById('hud')!);
 const screens = new Screens(document.getElementById('screen')!);
 const coach = new Coach();
 const progress = new Progress(TASKS, storage);
+/** 시뮬레이터 모드의 기록은 시험 코스와 따로 저장한다 */
+const simProgress = new Progress(STAGES, storage, 'excavator-sim-v1');
+/** 메뉴에서 보고 있는 모드 */
+let tab: 'exam' | 'sim' = storage?.getItem('excavator-tab') === 'sim' ? 'sim' : 'exam';
+const isStage = (t: TaskDef) => STAGES.includes(t);
 
 /** 지금까지 장비에 들어간 모든 명령. 이것만 있으면 훈련 전체를 다시 재생할 수 있다. */
 let log: Command[] = [];
 
-const switches = { engineOn: false, locked: true, rpm: 8, belt: false, horn: false };
+const switches = { engineOn: false, locked: true, rpm: 8, belt: false, horn: false, fast: false };
 let pattern: LeverPattern = storage?.getItem('excavator-pattern') === 'SAE' ? 'SAE' : 'ISO';
 let demo: Autopilot | null = null;
 let levers: LeverAxes = zeroAxes();
@@ -77,13 +83,30 @@ const gamepad = new GamepadInput();
 function openMenu(): void {
   mode = 'menu';
   demo = null;
-  screens.menu(LEVELS, TASKS, progress, pattern);
+  if (tab === 'exam') {
+    screens.menu(LEVELS, TASKS, progress, pattern);
+    return;
+  }
+  const xp = simXp(simProgress);
+  screens.simMenu(
+    {
+      stages: STAGES,
+      levelNames: SIM_LEVEL_NAMES,
+      progress: simProgress,
+      xp,
+      rank: simRank(xp),
+      next: nextRank(xp),
+      unlocked: (st) => stageUnlocked(st, simProgress),
+      stars,
+    },
+    pattern,
+  );
 }
 
 function openBrief(t: TaskDef): void {
   mode = 'brief';
   chosen = t;
-  screens.brief(t, progress.get(t.id));
+  screens.brief(t, (isStage(t) ? simProgress : progress).get(t.id));
 }
 
 /** 과제(또는 자유 연습)를 처음 상태에서 시작한다 */
@@ -100,7 +123,7 @@ function begin(t: TaskDef | null): void {
   sim = new ExcavatorSim(t?.site ?? TRAINING_YARD, undefined, t?.start);
   objective = t?.create?.(sim) ?? null;
   // 매번 시동이 꺼지고 안전레버가 잠긴 상태에서 시작한다
-  Object.assign(switches, { engineOn: false, locked: true, rpm: 8, belt: false, horn: false });
+  Object.assign(switches, { engineOn: false, locked: true, rpm: 8, belt: false, horn: false, fast: false });
   log = [];
   verify = '—';
   coach.reset();
@@ -113,12 +136,28 @@ function begin(t: TaskDef | null): void {
 
 function showResult(score: Score, extra?: ResultExtra): void {
   const t = task!;
+  mode = 'result';
+  if (isStage(t)) {
+    // 시뮬레이터 모드: 경험치가 오르고, 레벨이 오르면 새 스테이지가 열린다
+    const before = simXp(simProgress);
+    simProgress.record(t.id, score);
+    const after = simXp(simProgress);
+    const up = simRank(after).level > simRank(before).level;
+    const gained = after - before;
+    const news = up
+      ? `레벨 업! 레벨 ${simRank(after).level} "${simRank(after).name}"이 되었습니다. 새 스테이지가 열렸습니다 (경험치 +${gained})`
+      : gained > 0
+        ? `경험치 +${gained} (지금 ${after})`
+        : null;
+    const next = STAGES.find((st) => stageUnlocked(st, simProgress) && !simProgress.get(st.id)?.passed && st !== t) ?? null;
+    screens.result(t, score, simProgress.get(t.id)!, next, news, extra);
+    return;
+  }
   const before = progress.badge();
   progress.record(t.id, score);
   const after = progress.badge();
   const i = TASKS.indexOf(t);
   const next = i + 1 < TASKS.length && progress.isUnlocked(TASKS[i + 1].id) ? TASKS[i + 1] : null;
-  mode = 'result';
   screens.result(t, score, progress.get(t.id)!, next, !before && after ? `${after.tier} 등급 "${after.name}"을 얻었습니다` : null, extra);
 }
 
@@ -134,10 +173,17 @@ function finishTask(): void {
 screens.onAction = (a: ScreenAction) => {
   switch (a.act) {
     case 'task': {
+      const st = stageById(a.id);
       const t = taskById(a.id);
-      if (t && progress.isUnlocked(t.id)) openBrief(t);
+      if (st && stageUnlocked(st, simProgress)) openBrief(st);
+      else if (t && progress.isUnlocked(t.id)) openBrief(t);
       break;
     }
+    case 'tab':
+      tab = a.tab;
+      storage?.setItem('excavator-tab', tab);
+      openMenu();
+      break;
     case 'free':
       begin(null);
       break;
@@ -151,6 +197,13 @@ screens.onAction = (a: ScreenAction) => {
       begin(task);
       break;
     case 'next': {
+      if (task && isStage(task)) {
+        const cur = task;
+        const st = STAGES.find((x) => stageUnlocked(x, simProgress) && !simProgress.get(x.id)?.passed && x !== cur);
+        if (st) openBrief(st);
+        else openMenu();
+        break;
+      }
       const i = task ? TASKS.indexOf(task) : -1;
       if (i >= 0 && i + 1 < TASKS.length) openBrief(TASKS[i + 1]);
       else openMenu();
@@ -166,8 +219,8 @@ screens.onAction = (a: ScreenAction) => {
       openMenu();
       break;
     case 'reset':
-      if (window.confirm('모든 과제 기록과 등급을 지울까요?')) {
-        progress.reset();
+      if (window.confirm(tab === 'exam' ? '시험 코스의 기록과 등급을 지울까요?' : '시뮬레이터 모드의 기록과 레벨을 지울까요?')) {
+        (tab === 'exam' ? progress : simProgress).reset();
         openMenu();
       }
       break;
@@ -191,6 +244,10 @@ keyboard.onAction = (action: KeyAction) => {
   switch (action) {
     case 'belt':
       if (!demo) switches.belt = !switches.belt;
+      break;
+    case 'fast':
+      switches.fast = !switches.fast;
+      coach.say(sim, 'fast', switches.fast ? '주행 고속 단' : '주행 저속 단', 'good', 2, 0);
       break;
     case 'engine':
       if (demo) break;
@@ -249,6 +306,8 @@ keyboard.onAction = (action: KeyAction) => {
       break;
     case 'confirm':
     case 'horn':
+      break;
+    default:
       break;
   }
 };
@@ -360,6 +419,7 @@ function draw(): void {
     rpm: demo ? 10 : switches.rpm,
     pattern,
     inputMode: gamepadUsed ? '조이스틱' : '키보드',
+    fast: switches.fast,
     camera: world.cameraMode,
     levers,
     fine: keyboard.fine && !demo,
@@ -398,6 +458,7 @@ Object.assign(window, {
     world,
     switches,
     progress,
+    simProgress,
     /** 화면 갱신과 무관하게 n틱을 진행하고 한 번 그린다 */
     advance(n: number) {
       for (let i = 0; i < n; i++) tick();
@@ -405,7 +466,7 @@ Object.assign(window, {
     },
     /** 과제를 바로 시작한다. id가 없으면 자유 연습 */
     start(id?: string) {
-      begin(id ? (taskById(id) ?? null) : null);
+      begin(id ? (taskById(id) ?? stageById(id) ?? null) : null);
     },
     startDemo: () => {
       if (!demo) startDemo();

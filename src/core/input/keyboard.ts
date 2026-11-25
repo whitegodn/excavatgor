@@ -15,6 +15,7 @@ export type KeyAction =
   | 'belt'
   | 'pause'
   | 'confirm'
+  | 'fast'
   | 'dev';
 
 const ACTIONS: Record<string, KeyAction> = {
@@ -35,6 +36,7 @@ const ACTIONS: Record<string, KeyAction> = {
   KeyC: 'coach',
   KeyX: 'levers',
   KeyB: 'belt',
+  KeyQ: 'fast',
   Escape: 'pause',
   Enter: 'confirm',
   NumpadEnter: 'confirm',

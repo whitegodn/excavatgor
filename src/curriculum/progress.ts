@@ -27,9 +27,10 @@ export class Progress {
   constructor(
     private readonly tasks: readonly TaskDef[],
     private readonly store: KeyValueStore | null,
+    private readonly key: string = KEY,
   ) {
     try {
-      const raw = store?.getItem(KEY);
+      const raw = store?.getItem(this.key);
       if (raw) this.records = JSON.parse(raw) as Record<string, TaskRecord>;
     } catch {
       this.records = {};
@@ -86,7 +87,7 @@ export class Progress {
 
   private save(): void {
     try {
-      this.store?.setItem(KEY, JSON.stringify(this.records));
+      this.store?.setItem(this.key, JSON.stringify(this.records));
     } catch {
       // 저장하지 못해도(사생활 보호 모드 등) 훈련은 계속할 수 있다
     }

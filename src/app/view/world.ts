@@ -39,13 +39,14 @@ export class World {
   private readonly dust: ParticleSystem;
   private readonly dustEmitter = new Vector3();
   private markerMeshes: Mesh[] = [];
+  private truckSoil: Mesh | null = null;
   private markerKey = '';
   private markerMats: Record<string, StandardMaterial> | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
     sim: ExcavatorSim,
-    private readonly site: Site,
+    private site: Site,
   ) {
     this.engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer: false });
     const scene = new Scene(this.engine);
@@ -81,9 +82,8 @@ export class World {
     outer.material = outerMat;
     outer.isPickable = false;
 
-    this.addZone(site.digZone, new Color3(1, 0.85, 0.1), 'dig');
-    this.addZone(site.dumpZone, new Color3(0.2, 0.55, 1), 'dump');
     this.addScenery();
+    this.buildSite();
 
     this.excavatorView = new ExcavatorView(scene, sim.spec, shadows);
 
@@ -228,6 +228,66 @@ export class World {
     return next;
   }
 
+  /** 현장마다 다른 것들: 구역 표시, 덤프트럭. 현장이 바뀌면 다시 만든다 */
+  private buildSite(): void {
+    const scene = this.scene;
+    for (const m of scene.meshes.filter((x) => /^(dig|dump)(Lines|Post)$|^truck/.test(x.name))) m.dispose();
+    this.truckSoil = null;
+    const site = this.site;
+    // 연습장의 컨테이너와 고깔은 넓은 코스에서는 치운다
+    const yard = !site.shape && site.terrainSize <= 40;
+    for (const m of scene.meshes) if (m.name === 'prop' || m.name === 'cone') m.setEnabled(yard);
+    if (!site.hideZones) {
+      this.addZone(site.digZone, new Color3(1, 0.85, 0.1), 'dig');
+      if (!site.truck) this.addZone(site.dumpZone, new Color3(0.2, 0.55, 1), 'dump');
+    }
+    if (site.truck) {
+      const z = site.dumpZone;
+      const cx = (z.x0 + z.x1) / 2;
+      const cz = (z.z0 + z.z1) / 2;
+      const w = z.x1 - z.x0;
+      const d = z.z1 - z.z0;
+      const top = site.truck.bedTop;
+      const floor = 1.0;
+      const mat = (name: string, r: number, g: number, b: number) => {
+        const m = new StandardMaterial(name, scene);
+        m.diffuseColor = new Color3(r, g, b);
+        m.specularColor = Color3.Black();
+        return m;
+      };
+      const body = mat('truckBody', 0.2, 0.42, 0.75);
+      const dark = mat('truckDark', 0.13, 0.13, 0.14);
+      const part = (name: string, bw: number, bh: number, bd: number, x: number, y: number, zz: number, m: StandardMaterial) => {
+        const mesh = MeshBuilder.CreateBox(name, { width: bw, height: bh, depth: bd }, scene);
+        mesh.position.set(x, y, zz);
+        mesh.material = m;
+        mesh.isPickable = false;
+        return mesh;
+      };
+      // 적재함: 바닥과 네 벽. 운전실은 적재함 뒤쪽(-Z)에 둔다
+      part('truckFloor', w, 0.15, d, cx, floor, cz, body);
+      part('truckWallL', 0.12, top - floor, d, z.x0, (top + floor) / 2, cz, body);
+      part('truckWallR', 0.12, top - floor, d, z.x1, (top + floor) / 2, cz, body);
+      part('truckWallF', w, top - floor, 0.12, cx, (top + floor) / 2, z.z1, body);
+      part('truckWallB', w, top - floor, 0.12, cx, (top + floor) / 2, z.z0, body);
+      part('truckCab', w * 0.95, 1.9, 1.6, cx, 1.55, z.z0 - 1.0, body);
+      part('truckChassis', w * 0.7, 0.35, d + 2.2, cx, 0.75, cz - 0.9, dark);
+      for (const wz of [z.z0 - 1.0, cz + d * 0.15, cz + d * 0.4]) {
+        for (const wx of [z.x0 + 0.15, z.x1 - 0.15]) {
+          const wheel = MeshBuilder.CreateCylinder('truckWheel', { height: 0.35, diameter: 1.0 }, scene);
+          wheel.rotation.z = Math.PI / 2;
+          wheel.position.set(wx, 0.5, wz);
+          wheel.material = dark;
+          wheel.isPickable = false;
+        }
+      }
+      // 실린 흙: 실을수록 높아진다
+      const soil = part('truckSoil', w - 0.3, 1, d - 0.3, cx, floor + 0.08, cz, mat('truckSoilMat', 0.6, 0.42, 0.26));
+      soil.setEnabled(false);
+      this.truckSoil = soil;
+    }
+  }
+
   private markerMaterial(state: string): StandardMaterial {
     if (!this.markerMats) {
       const make = (name: string, r: number, g: number, b: number, alpha: number) => {
@@ -312,6 +372,10 @@ export class World {
   setSim(sim: ExcavatorSim): void {
     this.terrainView.mesh.dispose();
     this.terrainView = new TerrainView(this.scene, sim.terrain);
+    if (sim.site !== this.site) {
+      this.site = sim.site;
+      this.buildSite();
+    }
     this.sync(sim);
   }
 
@@ -340,8 +404,18 @@ export class World {
     const p = sim.pose();
     const tipX = p.baseX + p.fwdX * p.tipR;
     const tipZ = p.baseZ + p.fwdZ * p.tipR;
-    this.dropMarker.position.set(tipX, sim.terrain.heightAt(tipX, tipZ) + 0.06, tipZ);
     const zone = zoneAt(this.site, tipX, tipZ);
+    const truck = this.site.truck;
+    // 덤프트럭 위에서는 낙하 지점을 적재함 윗면에 표시한다
+    const markY = truck && zone === 'dump' ? truck.bedTop : sim.terrain.heightAt(tipX, tipZ);
+    this.dropMarker.position.set(tipX, markY + 0.06, tipZ);
+    if (this.truckSoil && truck) {
+      const fill = Math.min(1, sim.truckLoad / truck.capacity);
+      this.truckSoil.setEnabled(fill > 0.005);
+      const h = Math.max(0.02, fill * 1.4);
+      this.truckSoil.scaling.y = h;
+      this.truckSoil.position.y = 1.08 + h / 2;
+    }
     // 흰색: 빈 버킷, 초록: 여기에 쏟으면 됨, 빨강: 여기에 쏟으면 흘림
     if (sim.load < 0.03) this.dropMat.emissiveColor.set(1, 1, 1);
     else if (zone === 'dump') this.dropMat.emissiveColor.set(0.25, 1, 0.45);

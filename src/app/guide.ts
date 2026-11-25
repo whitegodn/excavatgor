@@ -36,7 +36,11 @@ export function bucketView(sim: ExcavatorSim): BucketView {
   const tipX = p.baseX + p.fwdX * p.tipR;
   const tipZ = p.baseZ + p.fwdZ * p.tipR;
   const tipY = p.baseY + p.tipY;
-  const ground = sim.terrain.heightAt(tipX, tipZ);
+  const zone = zoneAt(sim.site, tipX, tipZ);
+  // 덤프트럭 위에서는 적재함 벽 윗면을 "바닥"으로 본다 (그보다 높이 들어야 쏟을 수 있다)
+  const truck = sim.site.truck;
+  const soil = sim.terrain.heightAt(tipX, tipZ);
+  const ground = truck && zone === 'dump' ? Math.max(soil, truck.bedTop) : soil;
   const above = tipY - ground;
   const openUp = Math.asin(clamp(-Math.cos(p.a3), -1, 1)) / DEG;
   const over = p.a3 < -Math.PI && openUp < FACING_UP;
@@ -47,7 +51,7 @@ export function bucketView(sim: ExcavatorSim): BucketView {
     ground,
     above,
     pinAbove: p.baseY + p.wristY - ground,
-    zone: zoneAt(sim.site, tipX, tipZ),
+    zone,
     openUp,
     facing: over ? '뒤로 넘어감' : openUp >= FACING_UP ? '위' : openUp > 35 ? '비스듬히 위' : openUp > -15 ? '옆' : '아래',
     over,

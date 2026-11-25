@@ -76,6 +76,8 @@ export class ExcavatorSim {
   readonly spool = { swing: 0, arm: 0, boom: 0, bucket: 0, travelL: 0, travelR: 0 };
   /** 버킷 안의 흙(m³, 풀린 흙 기준) */
   load = 0;
+  /** 덤프트럭 적재함에 실은 흙(m³) */
+  truckLoad = 0;
 
   /** 버킷이 흙에 묻힌 깊이(m)와 그에 따른 속도 배율(1 = 저항 없음) */
   burial = 0;
@@ -148,9 +150,17 @@ export class ExcavatorSim {
     start: { boom: number; arm: number; bucket: number } = spec.initial,
   ) {
     this.terrain = new Terrain(site.terrainSize, site.cell);
+    if (site.shape) {
+      const t = this.terrain;
+      for (let j = 0; j < t.n; j++) {
+        for (let i = 0; i < t.n; i++) t.h[j * t.n + i] = site.shape(t.minX + i * t.cell, t.minZ + j * t.cell);
+      }
+      t.takeRenderDirty();
+    }
     this.x = site.start.x;
     this.z = site.start.z;
     this.heading = site.start.heading;
+    this.y = this.groundUnderTracks();
     this.boom = new CylinderJoint(spec.boom, start.boom);
     this.arm = new CylinderJoint(spec.arm, start.arm);
     this.bucket = new CylinderJoint(spec.bucket, start.bucket);
@@ -294,8 +304,14 @@ export class ExcavatorSim {
     const ta = sp.travelAccel * DT;
     // 버킷을 땅에 박은 채로는 궤도가 버킷을 끌지 못한다
     const sTravel = burial > 0.03 ? Math.min(sDig, pushResist, 0.25) : 1;
-    this.trackL += clamp(S.travelL * sp.travelMax * g * sTravel - this.trackL, -ta, ta);
-    this.trackR += clamp(S.travelR * sp.travelMax * g * sTravel - this.trackR, -ta, ta);
+    // 오르막에서는 느려지고 내리막에서는 조금 빨라진다. 고속 단은 평지 기준 1.8배
+    const hx = Math.sin(this.heading) * 1.5;
+    const hz = Math.cos(this.heading) * 1.5;
+    const grade = (this.terrain.heightAt(this.x + hx, this.z + hz) - this.terrain.heightAt(this.x - hx, this.z - hz)) / 3;
+    const slope = clamp(1 - 1.6 * grade * Math.sign(this.trackL + this.trackR), 0.4, 1.25);
+    const top = sp.travelMax * (cmd.fast ? 1.8 : 1) * g * sTravel * slope;
+    this.trackL += clamp(S.travelL * top - this.trackL, -ta, ta);
+    this.trackR += clamp(S.travelR * top - this.trackR, -ta, ta);
     if (Math.abs(this.trackL) < 1e-6 && S.travelL === 0) this.trackL = 0;
     if (Math.abs(this.trackR) < 1e-6 && S.travelR === 0) this.trackR = 0;
     const v = (this.trackL + this.trackR) / 2;
@@ -579,7 +595,11 @@ export class ExcavatorSim {
     if (vol <= 0) return;
     const cx = p.baseX + p.fwdX * r;
     const cz = p.baseZ + p.fwdZ * r;
-    const kind = zoneAt(this.site, cx, cz);
+    let kind = zoneAt(this.site, cx, cz);
+    // 덤프트럭: 적재함 벽보다 높은 데서 쏟아야 실린다. 낮으면 벽에 막혀 밖에 떨어진다
+    const truck = this.site.truck;
+    const intoTruck = !!truck && kind === 'dump' && cause !== 'dig' && p.baseY + y >= truck.bedTop;
+    if (truck && kind === 'dump' && !intoTruck) kind = 'none';
     if (cause === 'pour') this.cyclePoured += vol;
     if (cause === 'dig') {
       // 파는 중에 넘친 흙은 그 자리에 남을 뿐, 흘리거나 떨어뜨린 것이 아니다
@@ -596,8 +616,11 @@ export class ExcavatorSim {
     }
     this.load -= vol;
     const w = this.spec.bucketWidth * 0.3;
-    for (const o of [-w, 0, w]) {
-      this.terrain.deposit(cx + p.latX * o, cz + p.latZ * o, vol / 3, 0.3);
+    if (intoTruck) this.truckLoad += vol;
+    else {
+      for (const o of [-w, 0, w]) {
+        this.terrain.deposit(cx + p.latX * o, cz + p.latZ * o, vol / 3, 0.3);
+      }
     }
     this.dropRate += vol / DT;
     this.dropX = cx;
@@ -624,7 +647,7 @@ export class ExcavatorSim {
 
   /** 부피 보존 오차(%). 깎은 양 대비, 지형 + 버킷의 총량이 처음과 얼마나 다른지. */
   conservationError(): number {
-    const now = this.terrain.totalLooseEq() + this.load;
+    const now = this.terrain.totalLooseEq() + this.load + this.truckLoad;
     return (Math.abs(now - this.total0) / Math.max(this.cutTotal, 1e-3)) * 100;
   }
 
@@ -659,6 +682,7 @@ export class ExcavatorSim {
       this.returned,
       this.overflow,
       this.cycles,
+      this.truckLoad,
     ]) {
       mix(v);
     }

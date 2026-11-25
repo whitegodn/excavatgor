@@ -28,6 +28,8 @@ export interface Command {
   belt: boolean;
   /** 경음기를 누르고 있는가 */
   horn: boolean;
+  /** 주행 고속 단 (없으면 저속) */
+  fast?: boolean;
 }
 
 export function idleCommand(): Command {

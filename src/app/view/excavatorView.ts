@@ -407,6 +407,21 @@ export class ExcavatorView {
     const x = sp.latOffset;
     this.chassis.position.set(sim.x, sim.y, sim.z);
     this.chassis.rotation.y = sim.heading;
+    // 경사진 현장에서는 차체를 지형에 맞춰 기울여 보여 준다 (계산에는 넣지 않고 보이는 것만)
+    if (sim.site.shape) {
+      const fx = Math.sin(sim.heading);
+      const fz = Math.cos(sim.heading);
+      const t = sim.terrain;
+      const hf = t.heightAt(sim.x + fx * 1.6, sim.z + fz * 1.6);
+      const hb = t.heightAt(sim.x - fx * 1.6, sim.z - fz * 1.6);
+      const hr = t.heightAt(sim.x + fz * 1.1, sim.z - fx * 1.1);
+      const hl = t.heightAt(sim.x - fz * 1.1, sim.z + fx * 1.1);
+      this.chassis.rotation.x = -Math.atan2(hf - hb, 3.2);
+      this.chassis.rotation.z = Math.atan2(hr - hl, 2.2);
+    } else {
+      this.chassis.rotation.x = 0;
+      this.chassis.rotation.z = 0;
+    }
     this.upper.rotation.y = sim.swing;
 
     this.boomNode.position.set(x, p.pivotY, p.pivotR);
