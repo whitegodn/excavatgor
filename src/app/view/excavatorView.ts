@@ -1,5 +1,6 @@
 import {
   Color3,
+  DynamicTexture,
   Mesh,
   MeshBuilder,
   type Scene,
@@ -28,6 +29,7 @@ export interface CabControls {
   levers: LeverAxes;
   locked: boolean;
   rpm: number;
+  engineOn?: boolean;
 }
 
 /** 운전석 화면에서 이름표를 붙일 조종 장치 */
@@ -52,6 +54,9 @@ export class ExcavatorView {
   private readonly soilNormals: Float32Array;
   private readonly soilIdx: number[];
   private lastFill = -1;
+  /** 배기관 끝 (배기가스가 나오는 자리) */
+  exhaust!: Mesh;
+  private beacon!: StandardMaterial;
   // 운전실 조종 장치
   private joyL!: TransformNode;
   private joyR!: TransformNode;
@@ -74,10 +79,17 @@ export class ExcavatorView {
     shadows: ShadowGenerator,
   ) {
     const yellow = material(scene, 'yellow', 0.93, 0.66, 0.08);
+    // 도장한 철판: 햇빛을 받으면 번들거린다
+    yellow.specularColor = new Color3(0.55, 0.5, 0.38);
+    yellow.specularPower = 38;
     const dark = material(scene, 'dark', 0.14, 0.14, 0.15);
     const steel = material(scene, 'steel', 0.33, 0.34, 0.36);
     const rod = material(scene, 'rod', 0.78, 0.8, 0.82);
+    rod.specularColor = new Color3(0.9, 0.9, 0.9);
+    rod.specularPower = 90;
     const glass = material(scene, 'glass', 0.55, 0.75, 0.85, 0.3);
+    glass.specularColor = new Color3(1, 1, 1);
+    glass.specularPower = 180;
     const soilMat = material(scene, 'soil', 0.6, 0.42, 0.26);
     soilMat.specularColor = Color3.Black();
     soilMat.backFaceCulling = false;
@@ -136,8 +148,70 @@ export class ExcavatorView {
     box('cabBase', 0.95, 0.25, 1.4, cabX, 1.075, cabZ, yellow, this.upper);
     this.buildCabInterior(scene, cabX, steel, dark);
 
+    // ── 세부: 둥근 궤도 끝, 배기관, 경광등, 작업등, 거울, 난간, 뒤쪽 경고 줄무늬 ──
+    const wheel = (x: number, z: number) => {
+      const w = MeshBuilder.CreateCylinder('trackEnd', { height: 0.55, diameter: 0.75, tessellation: 16 }, scene);
+      w.rotation.z = Math.PI / 2;
+      w.position.set(x, 0.375, z);
+      w.material = dark;
+      w.parent = this.chassis;
+      cast(w);
+    };
+    for (const sx of [-half, half]) {
+      wheel(sx, spec.trackLength / 2);
+      wheel(sx, -spec.trackLength / 2);
+      // 궤도 옆의 바퀴(롤러)
+      for (let i = -2; i <= 2; i++) {
+        const r = MeshBuilder.CreateCylinder('roller', { height: 0.6, diameter: 0.34, tessellation: 10 }, scene);
+        r.rotation.z = Math.PI / 2;
+        r.position.set(sx, 0.2, i * 0.7);
+        r.material = steel;
+        r.parent = this.chassis;
+        r.isPickable = false;
+      }
+    }
+    this.exhaust = MeshBuilder.CreateCylinder('exhaust', { height: 0.8, diameter: 0.15, tessellation: 10 }, scene);
+    this.exhaust.position.set(0.85, 2.5, -1.9);
+    this.exhaust.material = dark;
+    this.exhaust.parent = this.upper;
+    cast(this.exhaust);
+    const glow = material(scene, 'workLight', 1, 0.97, 0.85);
+    glow.emissiveColor = new Color3(1, 0.95, 0.8);
+    box('lightL', 0.2, 0.12, 0.08, cabX - 0.3, 2.72, cabZ + 0.72, glow, this.upper);
+    box('lightR', 0.2, 0.12, 0.08, cabX + 0.3, 2.72, cabZ + 0.72, glow, this.upper);
+    this.beacon = material(scene, 'beacon', 1, 0.5, 0.05);
+    const beacon = MeshBuilder.CreateCylinder('beacon', { height: 0.16, diameter: 0.16, tessellation: 10 }, scene);
+    beacon.position.set(cabX + 0.25, 2.73, cabZ - 0.5);
+    beacon.material = this.beacon;
+    beacon.parent = this.upper;
+    beacon.isPickable = false;
+    box('mirrorL', 0.04, 0.3, 0.18, cabX - 0.6, 2.2, cabZ + 0.75, dark, this.upper);
+    box('mirrorR', 0.04, 0.3, 0.18, 1.25, 2.0, 0.9, dark, this.upper);
+    box('rail1', 0.04, 0.04, 2.1, 1.12, 2.5, -1.28, steel, this.upper);
+    box('rail2', 0.04, 0.42, 0.04, 1.12, 2.3, -0.3, steel, this.upper);
+    box('rail3', 0.04, 0.42, 0.04, 1.12, 2.3, -2.3, steel, this.upper);
+    box('step', 0.3, 0.06, 0.9, cabX - 0.6, 0.95, cabZ, steel, this.upper);
+    const stripeTex = new DynamicTexture('stripeTex', { width: 256, height: 64 }, scene, true);
+    const sctx = stripeTex.getContext();
+    sctx.fillStyle = '#f2b200';
+    sctx.fillRect(0, 0, 256, 64);
+    sctx.fillStyle = '#151515';
+    for (let i = -2; i < 9; i++) {
+      sctx.beginPath();
+      sctx.moveTo(i * 32, 64);
+      sctx.lineTo(i * 32 + 16, 64);
+      sctx.lineTo(i * 32 + 48, 0);
+      sctx.lineTo(i * 32 + 32, 0);
+      sctx.fill();
+    }
+    stripeTex.update();
+    const stripe = material(scene, 'stripe', 1, 1, 1);
+    stripe.diffuseTexture = stripeTex;
+    box('stripe', 2.3, 0.34, 0.03, 0, 1.22, -2.87, stripe, this.upper);
+    box('boomLight', 0.18, 0.1, 0.1, 0, 0.3, spec.boomLen * 0.45, glow, this.boomNodeEarly(scene));
+
     // 붐
-    this.boomNode = new TransformNode('boomNode', scene);
+    this.boomNode = this.earlyBoom!;
     this.boomNode.parent = this.upper;
     box('boom', 0.36, 0.5, spec.boomLen, 0, 0, spec.boomLen / 2, yellow, this.boomNode);
 
@@ -329,6 +403,14 @@ export class ExcavatorView {
     this.dial.rotation.y = (-135 + ((c.rpm - 1) / 9) * 270) * DEG;
   }
 
+  private earlyBoom: TransformNode | null = null;
+
+  /** 붐 마디는 붐에 다는 작업등 때문에 조금 먼저 만든다 */
+  private boomNodeEarly(scene: Scene): TransformNode {
+    this.earlyBoom = new TransformNode('boomNode', scene);
+    return this.earlyBoom;
+  }
+
   /** 버킷 옆모습을 폭 방향으로 늘려 만든 껍데기. 지형을 깎는 윤곽과 같은 데이터다. */
   private buildBucket(scene: Scene): Mesh {
     const L = this.spec.bucketLen;
@@ -401,7 +483,12 @@ export class ExcavatorView {
   }
 
   sync(sim: ExcavatorSim, controls?: CabControls): void {
-    if (controls) this.syncControls(controls);
+    if (controls) {
+      this.syncControls(controls);
+      // 시동이 걸려 있으면 경광등이 깜빡인다
+      const blink = controls.engineOn && Math.floor(sim.tick / 20) % 2 === 0 ? 1 : 0.08;
+      this.beacon.emissiveColor.set(blink, blink * 0.45, 0);
+    }
     const sp = this.spec;
     const p = sim.pose();
     const x = sp.latOffset;

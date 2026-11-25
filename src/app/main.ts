@@ -21,6 +21,7 @@ import type { Objective, TaskDef } from '../curriculum/task';
 import { Autopilot } from '../equipment/excavator/autopilot';
 import { ExcavatorSim } from '../equipment/excavator/excavatorSim';
 import { TRAINING_YARD } from '../sites/site';
+import { SimAudio } from './audio';
 import { Coach } from './coach';
 import { Hud } from './hud';
 import { promptFor } from './prompt';
@@ -42,6 +43,12 @@ const world = new World(canvas, sim, TRAINING_YARD);
 const hud = new Hud(document.getElementById('hud')!);
 const screens = new Screens(document.getElementById('screen')!);
 const coach = new Coach();
+const audio = new SimAudio();
+// 브라우저는 사용자가 키나 마우스를 누른 뒤에만 소리를 허용한다
+for (const ev of ['keydown', 'pointerdown']) window.addEventListener(ev, () => audio.start(), { passive: true });
+audio.muted = storage?.getItem('excavator-mute') === '1';
+/** 알림이 새로 뜰 때 알림음을 내기 위해 직전 알림을 기억한다 */
+let lastNotice: unknown = null;
 const progress = new Progress(TASKS, storage);
 /** 시뮬레이터 모드의 기록은 시험 코스와 따로 저장한다 */
 const simProgress = new Progress(STAGES, storage, 'excavator-sim-v1');
@@ -245,6 +252,16 @@ keyboard.onAction = (action: KeyAction) => {
     case 'belt':
       if (!demo) switches.belt = !switches.belt;
       break;
+    case 'mute':
+      storage?.setItem('excavator-mute', audio.toggleMute() ? '1' : '0');
+      coach.say(sim, 'mute', audio.muted ? '소리 끔' : '소리 켬', 'good', 2, 0);
+      break;
+    case 'quality': {
+      const q = world.cycleQuality();
+      storage?.setItem('excavator-quality', q.quality);
+      coach.say(sim, 'quality', `그래픽 품질: ${q.name}`, 'good', 2, 0);
+      break;
+    }
     case 'fast':
       switches.fast = !switches.fast;
       coach.say(sim, 'fast', switches.fast ? '주행 고속 단' : '주행 저속 단', 'good', 2, 0);
@@ -409,7 +426,13 @@ function frame(): void {
 }
 
 function draw(): void {
-  world.sync(sim, { levers, locked: demo ? false : switches.locked, rpm: demo ? 10 : switches.rpm });
+  const running = mode === 'play' && switches.engineOn;
+  world.sync(sim, { levers, locked: demo ? false : switches.locked, rpm: demo ? 10 : switches.rpm, engineOn: running });
+  audio.update({ sim, engineOn: running, rpm: demo ? 10 : switches.rpm, horn: mode === 'play' && switches.horn });
+  if (coach.notice !== lastNotice) {
+    lastNotice = coach.notice;
+    if (coach.notice && mode === 'play') audio.blip(coach.notice.kind);
+  }
   world.syncMarkers(objective ? objective.markers(sim) : []);
   hud.update({
     sim,
@@ -443,6 +466,8 @@ function draw(): void {
   world.render();
 }
 
+const savedQuality = storage?.getItem('excavator-quality');
+if (savedQuality === 'low' || savedQuality === 'medium' || savedQuality === 'high') world.setQuality(savedQuality);
 openMenu();
 world.engine.runRenderLoop(frame);
 

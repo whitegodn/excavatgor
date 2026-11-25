@@ -1,5 +1,6 @@
 import { Mesh, type Scene, StandardMaterial, Color3, VertexBuffer, VertexData } from '@babylonjs/core';
 import type { Terrain } from '../../core/terrain/terrain';
+import { applySoil } from './atmosphere';
 
 /** 격자점 번호로 만드는 고정 잡음(0..1). 땅 색에 얼룩을 넣어 움직임이 보이게 한다. */
 function noise(i: number, j: number): number {
@@ -43,17 +44,27 @@ export class TerrainView {
         this.positions[k + 2] = terrain.minZ + j * terrain.cell;
       }
     }
+    // 흙 무늬는 3m마다 되풀이된다
+    const uvs = new Float32Array(n * n * 2);
+    for (let j = 0; j < n; j++) {
+      for (let i = 0; i < n; i++) {
+        uvs[(j * n + i) * 2] = (i * terrain.cell) / 3;
+        uvs[(j * n + i) * 2 + 1] = (j * terrain.cell) / 3;
+      }
+    }
     this.refresh(0, n - 1, 0, n - 1);
 
     const vd = new VertexData();
     vd.positions = this.positions;
     vd.normals = this.normals;
     vd.colors = this.colors;
+    vd.uvs = uvs;
     vd.indices = indices;
     this.mesh = new Mesh('terrain', scene);
     vd.applyToMesh(this.mesh, true);
     const mat = new StandardMaterial('terrainMat', scene);
     mat.specularColor = Color3.Black();
+    applySoil(mat, scene, 1);
     mat.backFaceCulling = false;
     mat.twoSidedLighting = true;
     this.mesh.material = mat;

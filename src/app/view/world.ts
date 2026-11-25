@@ -20,6 +20,7 @@ import {
 import type { Marker } from '../../curriculum/task';
 import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Site, type Zone, zoneAt } from '../../sites/site';
+import { applySoil, Atmosphere, HORIZON, type Quality, QUALITY_NAMES } from './atmosphere';
 import { type CabControls, type CabPart, ExcavatorView } from './excavatorView';
 import { buildScenery } from './scenery';
 import { TerrainView } from './terrainView';
@@ -40,6 +41,12 @@ export class World {
   private readonly dust: ParticleSystem;
   private readonly dustEmitter = new Vector3();
   private markerMeshes: Mesh[] = [];
+  private atmosphere!: Atmosphere;
+  private smoke!: ParticleSystem;
+  private digDust!: ParticleSystem;
+  private trackDust!: ParticleSystem;
+  private readonly digEmitter = new Vector3();
+  private readonly trackEmitter = new Vector3();
   private truckSoil: Mesh | null = null;
   /** 지금 현장의 처음 지면 높이 (배경을 땅에 맞춰 놓는 데 쓴다) */
   private groundAt: (x: number, z: number) => number = () => 0;
@@ -54,18 +61,20 @@ export class World {
     this.engine = new Engine(canvas, true, { stencil: false, preserveDrawingBuffer: false });
     const scene = new Scene(this.engine);
     this.scene = scene;
-    const sky = new Color3(0.66, 0.8, 0.93);
+    const sky = HORIZON;
     scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogColor = sky;
-    scene.fogStart = 90;
-    scene.fogEnd = 260;
+    scene.fogStart = 120;
+    scene.fogEnd = 480;
 
     const hemi = new HemisphericLight('hemi', new Vector3(0.2, 1, 0.1), scene);
     // 두 조명의 합이 1을 넘으면 색이 하얗게 날아가고 그림자가 안 보인다
     hemi.intensity = 0.5;
     hemi.groundColor = new Color3(0.45, 0.42, 0.38);
-    const sun = new DirectionalLight('sun', new Vector3(-0.45, -1, 0.35).normalize(), scene);
+    // 해를 조금 낮춰 그림자를 길게 하고 따뜻한 색을 준다
+    const sun = new DirectionalLight('sun', new Vector3(-0.55, -0.82, 0.4).normalize(), scene);
+    sun.diffuse = new Color3(1, 0.96, 0.88);
     sun.position = new Vector3(18, 40, -14);
     sun.intensity = 0.6;
     sun.autoCalcShadowZBounds = true;
@@ -82,6 +91,7 @@ export class World {
     const outerMat = new StandardMaterial('outerMat', scene);
     outerMat.diffuseColor = new Color3(0.8, 0.73, 0.56);
     outerMat.specularColor = Color3.Black();
+    applySoil(outerMat, scene, 200);
     outer.material = outerMat;
     outer.isPickable = false;
 
@@ -97,7 +107,7 @@ export class World {
     this.cabCam.parent = this.excavatorView.upper;
     this.cabCam.rotation.set(0.33, 0.05, 0);
     this.cabCam.minZ = 0.05;
-    this.cabCam.maxZ = 400;
+    this.cabCam.maxZ = 600;
     this.cabCam.fov = 1.2;
     this.cabCam.inputs.clear();
     this.cabCam.inputs.addMouse();
@@ -114,7 +124,7 @@ export class World {
     this.extCam.wheelPrecision = 12;
     this.extCam.panningSensibility = 0;
     this.extCam.minZ = 0.2;
-    this.extCam.maxZ = 500;
+    this.extCam.maxZ = 600;
     scene.activeCamera = this.extCam;
     this.extCam.attachControl(canvas, true);
 
@@ -128,6 +138,19 @@ export class World {
     this.dropMarker.isPickable = false;
 
     this.dust = this.createDust();
+    // 배기가스(엔진 부하에 따라 짙어진다), 굴착할 때의 흙먼지, 주행할 때의 먼지
+    this.smoke = this.puffs('smoke', 220, [0.2, 0.2, 0.2, 0.5], [0.45, 0.45, 0.45, 0.25], 0.18, 0.55, 1.2, 2.2);
+    this.smoke.emitter = this.excavatorView.exhaust;
+    this.smoke.direction1 = new Vector3(-0.15, 1, -0.15);
+    this.smoke.direction2 = new Vector3(0.15, 1.6, 0.15);
+    this.digDust = this.puffs('digDust', 400, [0.62, 0.5, 0.36, 0.5], [0.7, 0.6, 0.45, 0.3], 0.25, 0.8, 0.5, 1.3);
+    this.digDust.emitter = this.digEmitter;
+    this.trackDust = this.puffs('trackDust', 300, [0.7, 0.62, 0.48, 0.35], [0.75, 0.68, 0.55, 0.2], 0.3, 0.9, 0.6, 1.4);
+    this.trackDust.emitter = this.trackEmitter;
+    this.trackDust.minEmitBox = new Vector3(-1.3, 0, -1.8);
+    this.trackDust.maxEmitBox = new Vector3(1.3, 0.2, 1.8);
+    this.atmosphere = new Atmosphere(scene, this.engine, sun, shadows, [this.extCam, this.cabCam]);
+    this.atmosphere.setQuality('medium');
     window.addEventListener('resize', () => this.engine.resize());
     this.sync(sim);
   }
@@ -186,6 +209,59 @@ export class World {
       cone.material = orange;
       cone.isPickable = false;
     }
+  }
+
+  /** 그래픽 품질을 정한다. 이름(낮음/보통/높음)을 돌려준다 */
+  setQuality(q: Quality): string {
+    this.atmosphere.setQuality(q);
+    return QUALITY_NAMES[q];
+  }
+
+  cycleQuality(): { quality: Quality; name: string } {
+    const quality = this.atmosphere.cycle();
+    return { quality, name: QUALITY_NAMES[quality] };
+  }
+
+  /** 뭉게뭉게 퍼지는 연기·먼지 */
+  private puffs(
+    name: string,
+    capacity: number,
+    c1: number[],
+    c2: number[],
+    minSize: number,
+    maxSize: number,
+    minLife: number,
+    maxLife: number,
+  ): ParticleSystem {
+    const tex = new DynamicTexture(`${name}Tex`, 32, this.scene, false);
+    const ctx = tex.getContext();
+    const grad = ctx.createRadialGradient(16, 16, 1, 16, 16, 15);
+    grad.addColorStop(0, 'rgba(255,255,255,1)');
+    grad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = grad;
+    ctx.fillRect(0, 0, 32, 32);
+    tex.update();
+    tex.hasAlpha = true;
+    const ps = new ParticleSystem(name, capacity, this.scene);
+    ps.particleTexture = tex;
+    ps.color1 = new Color4(c1[0], c1[1], c1[2], c1[3]);
+    ps.color2 = new Color4(c2[0], c2[1], c2[2], c2[3]);
+    ps.colorDead = new Color4(c2[0], c2[1], c2[2], 0);
+    ps.minSize = minSize;
+    ps.maxSize = maxSize;
+    ps.minLifeTime = minLife;
+    ps.maxLifeTime = maxLife;
+    ps.addSizeGradient(0, 0.6);
+    ps.addSizeGradient(1, 2.4);
+    ps.gravity = new Vector3(0, 0.35, 0);
+    ps.direction1 = new Vector3(-0.5, 0.4, -0.5);
+    ps.direction2 = new Vector3(0.5, 1.1, 0.5);
+    ps.minEmitPower = 0.3;
+    ps.maxEmitPower = 1;
+    ps.blendMode = ParticleSystem.BLENDMODE_STANDARD;
+    ps.emitRate = 0;
+    ps.start();
+    return ps;
   }
 
   private createDust(): ParticleSystem {
@@ -431,6 +507,16 @@ export class World {
     const fx = Math.sin(sim.heading + sim.swing);
     const fz = Math.cos(sim.heading + sim.swing);
     this.extCam.target.set(sim.x + fx * 2.5, sim.y + 1.2, sim.z + fz * 2.5);
+    // 배기가스: 부하가 클수록 많이 나온다
+    const sp = sim.spool;
+    const effort = Math.abs(sp.boom) + Math.abs(sp.arm) + Math.abs(sp.bucket) + Math.abs(sp.swing) + Math.abs(sp.travelL) + Math.abs(sp.travelR);
+    this.smoke.emitRate = controls?.engineOn ? 5 + Math.min(1, effort * 0.4 + (1 - sim.digResist)) * 45 : 0;
+    // 굴착 먼지: 버킷이 흙을 긁는 동안
+    this.digEmitter.set(tipX, p.baseY + p.tipY + 0.2, tipZ);
+    this.digDust.emitRate = Math.min(120, sim.cutRate * 260);
+    // 주행 먼지: 궤도가 돌 때
+    this.trackEmitter.set(sim.x, sim.y + 0.1, sim.z);
+    this.trackDust.emitRate = Math.min(60, (Math.abs(sim.trackL) + Math.abs(sim.trackR)) * 28);
     if (sim.dropRate > 0) {
       this.dustEmitter.set(sim.dropX, sim.dropY, sim.dropZ);
       this.dust.emitRate = Math.min(700, 250 + sim.dropRate * 900);

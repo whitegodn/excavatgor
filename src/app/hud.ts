@@ -254,6 +254,8 @@ const TEMPLATE = `
       <div class="k"><span>아래 레버 표시 접기</span><span><kbd>X</kbd></span></div>
       <div class="k"><span>처음부터 다시</span><span><kbd>Backspace</kbd></span></div>
       <div class="k"><span>일시 정지 · 메뉴</span><span><kbd>Esc</kbd></span></div>
+      <div class="k"><span>소리 켜고 끄기</span><span><kbd>N</kbd></span></div>
+      <div class="k"><span>그래픽 품질 (낮음·보통·높음)</span><span><kbd>Z</kbd></span></div>
       <div class="k"><span>개발자용 측정 표시</span><span><kbd>M</kbd></span></div>
       <h3>알아 두기</h3>
       <p>키 배치는 실제 레버와 같습니다. 레버를 앞으로 밀면(<kbd>I</kbd>) 붐이 내려가고, 당기면(<kbd>K</kbd>) 올라갑니다.</p>
