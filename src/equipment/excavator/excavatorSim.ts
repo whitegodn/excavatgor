@@ -144,14 +144,16 @@ export class ExcavatorSim {
   constructor(
     readonly site: Site,
     readonly spec: ExcavatorSpec = EXCAVATOR_14T,
+    /** 시작 자세(라디안). 주지 않으면 장비 제원의 기본 자세 */
+    start: { boom: number; arm: number; bucket: number } = spec.initial,
   ) {
     this.terrain = new Terrain(site.terrainSize, site.cell);
     this.x = site.start.x;
     this.z = site.start.z;
     this.heading = site.start.heading;
-    this.boom = new CylinderJoint(spec.boom, spec.initial.boom);
-    this.arm = new CylinderJoint(spec.arm, spec.initial.arm);
-    this.bucket = new CylinderJoint(spec.bucket, spec.initial.bucket);
+    this.boom = new CylinderJoint(spec.boom, start.boom);
+    this.arm = new CylinderJoint(spec.arm, start.arm);
+    this.bucket = new CylinderJoint(spec.bucket, start.bucket);
 
     const step = site.cell * 0.5;
     this.samples = buildProfileSamples(spec.bucketLen, step);

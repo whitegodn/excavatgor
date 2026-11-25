@@ -9,7 +9,7 @@ import {
 } from '../src/core/input/levers';
 import { DT } from '../src/core/sim/command';
 
-const SW = { engineOn: true, locked: false, rpm: 8 };
+const SW = { engineOn: true, locked: false, rpm: 8, belt: true, horn: false };
 
 describe('키보드 → 가상 레버', () => {
   it('WASD는 좌 레버, IJKL은 우 레버를 움직인다', () => {

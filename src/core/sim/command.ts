@@ -24,6 +24,10 @@ export interface Command {
   locked: boolean;
   /** 엔진 RPM 다이얼 1..10 */
   rpm: number;
+  /** 안전벨트를 맸는가. 장비 움직임에는 영향이 없고, 절차·안전 채점에 쓴다. */
+  belt: boolean;
+  /** 경음기를 누르고 있는가 */
+  horn: boolean;
 }
 
 export function idleCommand(): Command {
@@ -37,5 +41,7 @@ export function idleCommand(): Command {
     engineOn: false,
     locked: true,
     rpm: 8,
+    belt: false,
+    horn: false,
   };
 }

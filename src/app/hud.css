@@ -858,3 +858,336 @@ kbd {
     font-size: 14.5px;
   }
 }
+
+/* ── 과제 진행 상자(측정 패널 맨 위) ── */
+#taskBox h2 {
+  color: #fff;
+  font-size: 15px;
+}
+#side .target {
+  fill: rgba(255, 210, 40, 0.3);
+  stroke: #ffd228;
+  stroke-width: 2;
+  stroke-dasharray: 4 3;
+}
+#top .target {
+  fill: rgba(255, 210, 40, 0.35);
+  stroke: #ffd228;
+  stroke-width: 2;
+}
+
+/* ── 덮는 화면: 과정 메뉴, 과제 설명, 퀴즈, 일시 정지, 결과 ── */
+body.screen-open #hud {
+  display: none;
+}
+#screen {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(8, 12, 18, 0.62);
+  backdrop-filter: blur(3px);
+  padding: 16px;
+}
+#screen .card {
+  width: min(600px, 100%);
+  max-height: 100%;
+  overflow: auto;
+  padding: 24px 28px;
+  border-radius: 14px;
+  background: rgba(18, 23, 30, 0.96);
+  border: 1px solid var(--line);
+  font-size: 15px;
+  line-height: 1.6;
+  user-select: text;
+}
+#screen .card.wide {
+  width: min(860px, 100%);
+}
+#screen h1 {
+  margin: 0 0 6px;
+  font-size: 24px;
+  line-height: 1.35;
+}
+#screen h1.q {
+  font-size: 20px;
+  margin: 10px 0 16px;
+}
+#screen h2 {
+  margin: 18px 0 8px;
+  font-size: 16px;
+  color: var(--accent);
+}
+#screen h2 small {
+  color: var(--muted);
+  font-weight: 400;
+  font-size: 13.5px;
+  margin-left: 8px;
+}
+#screen .sub {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 14px;
+}
+#screen em {
+  font-style: normal;
+  font-size: 12px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: rgba(255, 197, 49, 0.18);
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  white-space: nowrap;
+}
+#screen header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+#screen .badge {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 13px;
+  text-align: right;
+}
+#screen .badge.earned {
+  border: 1px solid #cd8b4a;
+  background: rgba(205, 139, 74, 0.16);
+  color: #f3c79b;
+}
+#screen .badge b {
+  font-size: 15px;
+}
+#screen .soon {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px dashed var(--line);
+  color: var(--muted);
+  font-size: 14px;
+}
+#screen button {
+  font: inherit;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  padding: 8px 14px;
+  cursor: pointer;
+}
+#screen button:hover:not([disabled]) {
+  background: rgba(255, 255, 255, 0.14);
+}
+#screen button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+#screen button.primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #111;
+  font-weight: 700;
+}
+#screen button.primary:hover {
+  background: #ffd45e;
+}
+#screen button.primary kbd {
+  color: #111;
+  border-color: rgba(0, 0, 0, 0.4);
+  background: rgba(0, 0, 0, 0.08);
+}
+#screen button.quiet {
+  color: var(--muted);
+  margin-left: auto;
+}
+#screen button small {
+  color: var(--muted);
+  margin-left: 6px;
+  font-size: 12.5px;
+}
+#screen .tasks {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+#screen .task {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 12px;
+  text-align: left;
+  padding: 9px 14px;
+}
+#screen .task .tid {
+  font: 700 13px ui-monospace, Consolas, monospace;
+  color: var(--muted);
+}
+#screen .task .tt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+#screen .task .tt small {
+  margin: 0;
+  font-size: 13px;
+}
+#screen .task .tm {
+  font-size: 13px;
+  color: var(--muted);
+  white-space: nowrap;
+}
+#screen .task.passed {
+  border-color: rgba(87, 217, 138, 0.55);
+}
+#screen .task.passed .tm {
+  color: var(--good);
+}
+#screen .task.open .tm {
+  color: var(--accent);
+}
+#screen .task[data-primary] {
+  border-color: var(--accent);
+  background: rgba(255, 197, 49, 0.1);
+}
+#screen .task.locked {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+#screen footer {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 20px;
+}
+#screen footer.col {
+  flex-direction: column;
+}
+#screen .hint {
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13.5px;
+}
+#screen .brief {
+  margin: 10px 0 14px;
+  padding-left: 20px;
+}
+#screen .brief li {
+  margin: 4px 0;
+}
+#screen .facts {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+#screen .facts div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+}
+#screen .facts span {
+  color: var(--muted);
+  font-size: 14px;
+}
+#screen .facts b {
+  font-weight: 600;
+}
+#screen .choices {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#screen .choice {
+  text-align: left;
+  padding: 10px 14px;
+}
+#screen .choice.right {
+  border-color: var(--good);
+  background: rgba(87, 217, 138, 0.18);
+  opacity: 1;
+}
+#screen .choice.wrong {
+  border-color: var(--bad);
+  background: rgba(255, 107, 94, 0.18);
+}
+#screen .choice.dim {
+  opacity: 0.5;
+}
+#screen .why {
+  margin: 14px 0 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  border: 1px solid var(--line);
+}
+#screen .why.right {
+  border-color: var(--good);
+  background: rgba(87, 217, 138, 0.12);
+}
+#screen .why.wrong {
+  border-color: var(--bad);
+  background: rgba(255, 107, 94, 0.12);
+}
+#screen .verdict {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin: 10px 0 14px;
+  padding: 12px 18px;
+  border-radius: 12px;
+  font-size: 26px;
+}
+#screen .verdict.pass {
+  background: rgba(87, 217, 138, 0.16);
+  border: 1px solid var(--good);
+  color: #c9f7dc;
+}
+#screen .verdict.fail {
+  background: rgba(255, 107, 94, 0.14);
+  border: 1px solid var(--bad);
+  color: #ffd3ce;
+}
+#screen .verdict small {
+  font-size: 14px;
+  color: var(--muted);
+}
+#screen table.score {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 10px;
+}
+#screen table.score th,
+#screen table.score td {
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-weight: 400;
+  vertical-align: top;
+}
+#screen table.score th {
+  white-space: nowrap;
+  font-weight: 600;
+}
+#screen table.score .pts {
+  white-space: nowrap;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+#screen table.score .pts small {
+  color: var(--muted);
+  font-weight: 400;
+}
+#screen table.score .pts.full {
+  color: var(--good);
+}
+#screen table.score .pts.low {
+  color: var(--bad);
+}

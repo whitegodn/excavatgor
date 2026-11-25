@@ -3,11 +3,13 @@ import { DEG } from '../core/sim/math';
 import { BUCKET_PROFILE } from '../equipment/excavator/bucketProfile';
 import type { ExcavatorSim } from '../equipment/excavator/excavatorSim';
 import type { Notice } from './coach';
-import { bucketView, guideText } from './guide';
+import type { ProgressLine } from '../curriculum/task';
+import { bucketView } from './guide';
 import type { CameraMode } from './view/world';
 
 export interface HudState {
   sim: ExcavatorSim;
+  belt: boolean;
   engineOn: boolean;
   locked: boolean;
   rpm: number;
@@ -16,10 +18,13 @@ export interface HudState {
   camera: CameraMode;
   levers: LeverAxes;
   fine: boolean;
-  coach: boolean;
-  /** 시범 운전 중이면 지금 단계 설명, 아니면 null */
-  demo: string | null;
+  /** 가운데 위 "지금 할 일" 안내문(HTML). 없으면 빈 문자열 */
+  prompt: string;
   notice: Notice | null;
+  /** 과제 중이면 과제 이름과 진행 상황, 자유 연습이면 null */
+  task: { title: string; lines: ProgressLine[]; time: number; limit: number | null } | null;
+  /** 지금 향해야 할 목표 지점 */
+  focus: { x: number; y: number; z: number; radius: number } | null;
   /** 운전석 시점에서 조종 장치 이름표를 붙일 화면 위치 */
   tags: { id: string; x: number; y: number }[];
   fps: number;
@@ -43,6 +48,7 @@ const TEMPLATE = `
   <div id="status" class="box">
     <h1>굴착기 시뮬레이터 <small>평지 연습장</small></h1>
     <div class="chips">
+      <span class="chip" id="chipBelt"></span>
       <span class="chip" id="chipEngine"></span>
       <span class="chip" id="chipLock"></span>
       <span class="chip">엔진 다이얼 <b id="chipRpm"></b></span>
@@ -66,6 +72,7 @@ const TEMPLATE = `
       <text id="svArmT" class="lbl arm">암</text>
       <text id="svBucketT" class="lbl bucket">버킷</text>
       <line id="svDrop" class="dropline"></line>
+      <circle id="svTarget" class="target"></circle>
       <text class="note" x="${SV_W - 4}" y="${sy(0) - 4}" text-anchor="end">처음 지면</text>
     </svg>
     <div class="poseRow">
@@ -74,6 +81,7 @@ const TEMPLATE = `
         <rect id="tvDump" class="zone dump"></rect>
         <g id="tvMachine"><rect class="body" x="-8.5" y="-11.5" width="17" height="23" rx="2"></rect><path class="nose" d="M0 -16 L4 -11.5 L-4 -11.5 Z"></path></g>
         <line id="tvArm" class="reach"></line>
+        <circle id="tvTarget" class="target" r="6"></circle>
         <circle id="tvTip" r="5"></circle>
       </svg>
       <div class="readouts">
@@ -95,6 +103,11 @@ const TEMPLATE = `
   <div id="notice" class="hidden"></div>
 </div>
 <div id="metrics" class="box">
+  <div id="taskBox" class="hidden">
+    <h2 id="taskTitle"></h2>
+    <div id="taskLines"></div>
+    <div class="sep"></div>
+  </div>
   <h2>측정</h2>
   <div class="row"><span>버킷에 담긴 흙</span><span id="mLoad"></span></div>
   <div class="bar"><i id="barLoad"></i></div>
@@ -190,8 +203,8 @@ const TEMPLATE = `
     </div>
   </div>
   <div class="keys">
-    <span><kbd>R</kbd> 시동</span><span><kbd>Shift</kbd> 미세 조작</span>
-    <span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span>
+    <span><kbd>B</kbd> 안전벨트</span><span><kbd>R</kbd> 시동</span><span><kbd>Shift</kbd> 미세 조작</span>
+    <span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span><span><kbd>Esc</kbd> 일시 정지·메뉴</span>
   </div>
 </div>
 <div id="tags">
@@ -219,6 +232,7 @@ const TEMPLATE = `
     </div>
     <div>
       <h3>조작 키</h3>
+      <div class="k"><span>안전벨트 / 경음기</span><span><kbd>B</kbd> / <kbd>Space</kbd></span></div>
       <div class="k"><span>시동 / 안전레버</span><span><kbd>R</kbd> / <kbd>F</kbd></span></div>
       <div class="k"><span>좌 레버</span><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span></div>
       <div class="k"><span>우 레버</span><span><kbd>I</kbd><kbd>J</kbd><kbd>K</kbd><kbd>L</kbd></span></div>
@@ -231,6 +245,7 @@ const TEMPLATE = `
       <div class="k"><span>단계 안내 켜고 끄기</span><span><kbd>C</kbd></span></div>
       <div class="k"><span>아래 레버 표시 접기</span><span><kbd>X</kbd></span></div>
       <div class="k"><span>처음부터 다시</span><span><kbd>Backspace</kbd></span></div>
+      <div class="k"><span>일시 정지 · 메뉴</span><span><kbd>Esc</kbd></span></div>
       <div class="k"><span>개발자용 측정 표시</span><span><kbd>M</kbd></span></div>
       <h3>알아 두기</h3>
       <p>키 배치는 실제 레버와 같습니다. 레버를 앞으로 밀면(<kbd>I</kbd>) 붐이 내려가고, 당기면(<kbd>K</kbd>) 올라갑니다.</p>
@@ -331,7 +346,7 @@ export class Hud {
   }
 
   /** 옆모습·윗모습 그림과 자세 수치 */
-  private updatePose(sim: ExcavatorSim): void {
+  private updatePose(sim: ExcavatorSim, focus: HudState['focus']): void {
     const el = this.el;
     const p = sim.pose();
     const sp = sim.spec;
@@ -383,6 +398,15 @@ export class Hud {
     attr(el.tvTip, { cx: tx(b.tipX), cy: tz(b.tipZ) });
     el.tvTip.setAttribute('class', `tip ${b.zone}`);
 
+    // 과제의 목표 지점: 옆모습에는 "장비에서의 거리와 높이"로, 윗모습에는 방향으로 나타낸다
+    el.svTarget.style.display = focus ? '' : 'none';
+    el.tvTarget.style.display = focus ? '' : 'none';
+    if (focus) {
+      const reach = Math.hypot(focus.x - sim.x, focus.z - sim.z);
+      attr(el.svTarget, { cx: sx(reach), cy: sy(focus.y - p.baseY), r: focus.radius * SV });
+      attr(el.tvTarget, { cx: tx(focus.x), cy: tz(focus.z) });
+    }
+
     // 수치
     const h = b.tipY;
     el.roHeight.textContent = b.touching
@@ -419,6 +443,8 @@ export class Hud {
       this.setLabels(s.pattern);
     }
     this.root.classList.toggle('cab', s.camera === 'cab');
+    el.chipBelt.textContent = s.belt ? '안전벨트 맴' : '안전벨트 안 맴';
+    el.chipBelt.className = `chip ${s.belt ? 'on' : 'off'}`;
     el.chipEngine.textContent = s.engineOn ? '시동 켜짐' : '시동 꺼짐';
     el.chipEngine.className = `chip ${s.engineOn ? 'on' : 'off'}`;
     el.chipLock.textContent = s.locked ? '안전레버 잠김' : '안전레버 해제';
@@ -428,7 +454,7 @@ export class Hud {
     el.chipInput.textContent = s.inputMode;
     el.chipCam.textContent = s.camera === 'cab' ? '운전석' : '외부';
 
-    const prompt = guideText(s);
+    const prompt = s.prompt;
     el.prompt.classList.toggle('hidden', prompt === '');
     if (prompt !== '' && el.prompt.innerHTML !== prompt) el.prompt.innerHTML = prompt;
     el.notice.classList.toggle('hidden', !s.notice);
@@ -457,7 +483,24 @@ export class Hud {
     });
     el.fine.classList.toggle('hidden', !s.fine);
 
-    this.updatePose(sim);
+    this.updatePose(sim, s.focus);
+
+    el.taskBox.classList.toggle('hidden', !s.task);
+    if (s.task) {
+      const t = s.task;
+      const clock = (sec: number) => `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}`;
+      const left = t.limit === null ? null : Math.max(0, t.limit - t.time);
+      const rows = [
+        ...t.lines,
+        left === null
+          ? { label: '걸린 시간', value: clock(t.time) }
+          : { label: '남은 시간', value: clock(left), tone: left < 20 ? ('warn' as const) : undefined },
+      ];
+      el.taskTitle.textContent = t.title;
+      el.taskLines.innerHTML = rows
+        .map((r) => `<div class="row"><span>${r.label}</span><span class="${r.tone === 'warn' ? 'warnText' : r.tone === 'good' ? 'ok' : ''}">${r.value}</span></div>`)
+        .join('');
+    }
 
     const cap = sim.spec.bucketCapacity;
     const fill = sim.load / cap;

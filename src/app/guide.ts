@@ -1,32 +1,7 @@
-import type { LeverPattern } from '../core/input/levers';
+import { type Fn, keyFor, type LeverPattern } from '../core/input/levers';
 import { clamp, DEG, wrapAngle } from '../core/sim/math';
 import type { ExcavatorSim } from '../equipment/excavator/excavatorSim';
 import { type Zone, type ZoneKind, zoneAt } from '../sites/site';
-
-/** 장비 동작 하나. 레버 방식에 따라 누르는 키가 달라진다. */
-export type Fn = 'armOut' | 'armIn' | 'boomDown' | 'boomUp' | 'curl' | 'open' | 'swingL' | 'swingR';
-
-export function keyFor(fn: Fn, pattern: LeverPattern): string {
-  const iso = pattern === 'ISO';
-  switch (fn) {
-    case 'armOut':
-      return iso ? 'W' : 'I';
-    case 'armIn':
-      return iso ? 'S' : 'K';
-    case 'boomDown':
-      return iso ? 'I' : 'W';
-    case 'boomUp':
-      return iso ? 'K' : 'S';
-    case 'curl':
-      return 'J';
-    case 'open':
-      return 'L';
-    case 'swingL':
-      return 'A';
-    case 'swingR':
-      return 'D';
-  }
-}
 
 /** 버킷 입구가 이 각도(도) 이상 위를 보면 "위"라고 부른다. 안내의 목표와 같은 값이다. */
 export const FACING_UP = 68;
@@ -103,8 +78,12 @@ export function turnToward(sim: ExcavatorSim, zone: Zone): Turn {
   };
 }
 
+export { type Fn, keyFor };
+
 export interface GuideState {
   sim: ExcavatorSim;
+  /** 안전벨트를 맸는가 */
+  belt: boolean;
   engineOn: boolean;
   locked: boolean;
   pattern: LeverPattern;
@@ -129,6 +108,9 @@ const DEEP_SPOT = 0.45;
 export function guideText(s: GuideState): string {
   if (s.demo) {
     return `시범 운전 중: ${s.demo}<small>아래 레버 표시를 보며 순서를 익히세요 · ${kbd('G')} 중지 · 시범은 엔진 다이얼을 10으로 올려 빠르게 보여 줍니다</small>`;
+  }
+  if (!s.belt && !s.engineOn) {
+    return `${kbd('B')} 키를 눌러 안전벨트를 매세요<small>운전석에 앉으면 가장 먼저 할 일입니다</small>`;
   }
   if (!s.engineOn) return `${kbd('R')} 키를 눌러 시동을 거세요`;
   if (s.locked) {

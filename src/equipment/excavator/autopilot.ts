@@ -2,6 +2,9 @@ import { type Command, idleCommand } from '../../core/sim/command';
 import { clamp, DEG } from '../../core/sim/math';
 import type { ExcavatorSim } from './excavatorSim';
 
+/** 사이클마다 파는 방향(도). 정면, 오른쪽, 왼쪽을 번갈아 판다 */
+const DIG_OFFSETS = [0, 7, -7];
+
 export const AUTOPILOT_PHASES = [
   '암을 뻗고 버킷을 편다',
   '붐을 내려 날을 땅에 넣는다',
@@ -23,6 +26,7 @@ export class Autopilot {
   phase = 0;
   done = false;
   private hold = 0;
+  private cycle = 0;
 
   constructor(
     private cyclesLeft = 1,
@@ -34,7 +38,7 @@ export class Autopilot {
   }
 
   next(sim: ExcavatorSim): Command {
-    const cmd: Command = { ...idleCommand(), engineOn: true, locked: false, rpm: 10 };
+    const cmd: Command = { ...idleCommand(), engineOn: true, locked: false, rpm: 10, belt: true };
     if (this.done) return cmd;
     const p = sim.pose();
     const r2 = sim.armAngle;
@@ -48,13 +52,16 @@ export class Autopilot {
       return clamp(Math.sign(errDeg) * w, -1, 1);
     };
 
+    // 같은 자리만 파면 구덩이가 깊어져 담기 어렵다. 사이클마다 조금씩 옆으로 옮겨 판다
+    const digSwing = DIG_OFFSETS[this.cycle % DIG_OFFSETS.length] * DEG;
+
     switch (this.phase) {
       case 0: {
-        cmd.swing = swingTo(0);
+        cmd.swing = swingTo(digSwing);
         cmd.arm = r2 < -47 * DEG ? -1 : 0;
         cmd.bucket = clamp((r3 / DEG + 25) / 8, -1, 1);
         cmd.boom = clamp((1.0 - tipY) * 2, -1, 1);
-        const ready = r2 >= -47 * DEG && Math.abs(r3 / DEG + 25) < 3 && Math.abs(sim.swing) < 1.5 * DEG;
+        const ready = r2 >= -47 * DEG && Math.abs(r3 / DEG + 25) < 3 && Math.abs(sim.swing - digSwing) < 1.5 * DEG;
         if (ready && Math.abs(sim.swingVel) < 3 * DEG) this.phase = 1;
         break;
       }
@@ -99,9 +106,14 @@ export class Autopilot {
         }
         break;
       case 7: {
-        cmd.swing = swingTo(0);
+        // 다음에 팔 자리로 돌아온다
+        const nextSwing = DIG_OFFSETS[(this.cycle + 1) % DIG_OFFSETS.length] * DEG;
+        cmd.swing = swingTo(nextSwing);
         cmd.bucket = clamp((r3 / DEG + 60) / 8, -1, 1);
-        if (Math.abs(sim.swing) < 1.5 * DEG && Math.abs(sim.swingVel) < 3 * DEG) {
+        // 돌아올 때도 버킷을 높이 든 채로 (선회 경로의 장애물을 넘는다)
+        cmd.boom = clamp((2.4 - tipY) * 2, -1, 1);
+        if (Math.abs(sim.swing - nextSwing) < 1.5 * DEG && Math.abs(sim.swingVel) < 3 * DEG) {
+          this.cycle++;
           this.cyclesLeft--;
           if (this.cyclesLeft > 0) this.phase = 0;
           else this.done = true;

@@ -17,6 +17,7 @@ import {
   Vector2,
   Vector3,
 } from '@babylonjs/core';
+import type { Marker } from '../../curriculum/task';
 import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Site, type Zone, zoneAt } from '../../sites/site';
 import { type CabControls, type CabPart, ExcavatorView } from './excavatorView';
@@ -37,6 +38,9 @@ export class World {
   private readonly extCam: ArcRotateCamera;
   private readonly dust: ParticleSystem;
   private readonly dustEmitter = new Vector3();
+  private markerMeshes: Mesh[] = [];
+  private markerKey = '';
+  private markerMats: Record<string, StandardMaterial> | null = null;
 
   constructor(
     private readonly canvas: HTMLCanvasElement,
@@ -222,6 +226,86 @@ export class World {
     to.attachControl(this.canvas, true);
     this.cameraMode = next;
     return next;
+  }
+
+  private markerMaterial(state: string): StandardMaterial {
+    if (!this.markerMats) {
+      const make = (name: string, r: number, g: number, b: number, alpha: number) => {
+        const m = new StandardMaterial(name, this.scene);
+        m.disableLighting = true;
+        m.emissiveColor = new Color3(r, g, b);
+        m.alpha = alpha;
+        m.backFaceCulling = false;
+        return m;
+      };
+      this.markerMats = {
+        active: make('mkActive', 1, 0.82, 0.15, 0.5),
+        todo: make('mkTodo', 1, 1, 1, 0.16),
+        done: make('mkDone', 0.3, 0.9, 0.45, 0.12),
+        pole: make('mkPole', 0.95, 0.2, 0.15, 1),
+        rope: make('mkRope', 1, 0.95, 0.9, 1),
+      };
+    }
+    return this.markerMats[state];
+  }
+
+  /**
+   * 과제의 표지를 3D 화면에 놓는다: 목표 공(지금 것은 노랑), 장애물 줄.
+   * 표지의 구성이 바뀔 때만 다시 만들고, 평소에는 색만 바꾼다.
+   */
+  syncMarkers(markers: readonly Marker[]): void {
+    const key = markers
+      .map((m) => (m.kind === 'target' ? `t${m.x.toFixed(2)},${m.y.toFixed(2)},${m.z.toFixed(2)}` : `b${m.x1},${m.z1},${m.x2},${m.z2}`))
+      .join('|');
+    if (key !== this.markerKey) {
+      for (const mesh of this.markerMeshes) mesh.dispose();
+      this.markerMeshes = [];
+      this.markerKey = key;
+      for (const m of markers) {
+        if (m.kind === 'target') {
+          const ball = MeshBuilder.CreateSphere('target', { diameter: m.radius * 2, segments: 16 }, this.scene);
+          ball.position.set(m.x, m.y, m.z);
+          ball.isPickable = false;
+          // 공이 얼마나 높이 있는지 알 수 있게 바닥까지 가는 기둥을 세운다
+          const stem = MeshBuilder.CreateCylinder('targetStem', { height: 1, diameter: 0.05 }, this.scene);
+          stem.scaling.y = m.y;
+          stem.position.set(m.x, m.y / 2, m.z);
+          stem.isPickable = false;
+          this.markerMeshes.push(ball, stem);
+        } else {
+          for (const [x, z] of [
+            [m.x1, m.z1],
+            [m.x2, m.z2],
+          ]) {
+            const pole = MeshBuilder.CreateCylinder('pole', { height: m.height + 0.3, diameter: 0.12 }, this.scene);
+            pole.position.set(x, (m.height + 0.3) / 2, z);
+            pole.material = this.markerMaterial('pole');
+            pole.isPickable = false;
+            this.markerMeshes.push(pole);
+          }
+          const rope = MeshBuilder.CreateTube(
+            'rope',
+            { path: [new Vector3(m.x1, m.height, m.z1), new Vector3(m.x2, m.height, m.z2)], radius: 0.06 },
+            this.scene,
+          );
+          rope.material = this.markerMaterial('rope');
+          rope.isPickable = false;
+          this.markerMeshes.push(rope);
+        }
+      }
+    }
+    let i = 0;
+    for (const m of markers) {
+      if (m.kind === 'target') {
+        const mat = this.markerMaterial(m.state);
+        this.markerMeshes[i].material = mat;
+        this.markerMeshes[i + 1].material = mat;
+        this.markerMeshes[i + 1].setEnabled(m.state === 'active');
+        i += 2;
+      } else {
+        i += 3;
+      }
+    }
   }
 
   /** 새 훈련을 시작할 때: 지형을 새 시뮬레이션의 것으로 바꾼다 */

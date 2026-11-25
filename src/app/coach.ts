@@ -56,6 +56,16 @@ export class Coach {
     this.notice = { text, kind, until: sim.tick + seconds * SIM_HZ };
   }
 
+  /** 과제 심판이 보낸 알림을 그대로 띄운다 */
+  push(sim: ExcavatorSim, text: string, kind: Notice['kind'], seconds = 5): void {
+    this.notice = { text, kind, until: sim.tick + seconds * SIM_HZ };
+  }
+
+  /** 코치가 말하지 않는 과제에서도 지난 알림은 지운다 */
+  expire(sim: ExcavatorSim): void {
+    if (this.notice && sim.tick > this.notice.until) this.notice = null;
+  }
+
   /** 매 틱, 시뮬레이션을 한 단계 진행한 뒤에 부른다 */
   update(sim: ExcavatorSim, cmd: Command, pattern: LeverPattern): void {
     const key = (fn: Parameters<typeof keyFor>[0]) => `[${keyFor(fn, pattern)}]`;

@@ -12,6 +12,9 @@ export type KeyAction =
   | 'restart'
   | 'coach'
   | 'levers'
+  | 'belt'
+  | 'pause'
+  | 'confirm'
   | 'dev';
 
 const ACTIONS: Record<string, KeyAction> = {
@@ -31,6 +34,10 @@ const ACTIONS: Record<string, KeyAction> = {
   Backspace: 'restart',
   KeyC: 'coach',
   KeyX: 'levers',
+  KeyB: 'belt',
+  Escape: 'pause',
+  Enter: 'confirm',
+  NumpadEnter: 'confirm',
   KeyM: 'dev',
 };
 

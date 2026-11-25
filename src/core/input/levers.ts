@@ -30,6 +30,33 @@ export interface MachineSwitches {
   engineOn: boolean;
   locked: boolean;
   rpm: number;
+  belt: boolean;
+  horn: boolean;
+}
+
+/** 장비 동작 하나. 레버 방식에 따라 누르는 키가 달라진다. */
+export type Fn = 'armOut' | 'armIn' | 'boomDown' | 'boomUp' | 'curl' | 'open' | 'swingL' | 'swingR';
+
+export function keyFor(fn: Fn, pattern: LeverPattern): string {
+  const iso = pattern === 'ISO';
+  switch (fn) {
+    case 'armOut':
+      return iso ? 'W' : 'I';
+    case 'armIn':
+      return iso ? 'S' : 'K';
+    case 'boomDown':
+      return iso ? 'I' : 'W';
+    case 'boomUp':
+      return iso ? 'K' : 'S';
+    case 'curl':
+      return 'J';
+    case 'open':
+      return 'L';
+    case 'swingL':
+      return 'A';
+    case 'swingR':
+      return 'D';
+  }
 }
 
 export function leversToCommand(l: LeverAxes, pattern: LeverPattern, sw: MachineSwitches): Command {
@@ -44,6 +71,8 @@ export function leversToCommand(l: LeverAxes, pattern: LeverPattern, sw: Machine
     engineOn: sw.engineOn,
     locked: sw.locked,
     rpm: sw.rpm,
+    belt: sw.belt,
+    horn: sw.horn,
   };
 }
 

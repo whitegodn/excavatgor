@@ -8,7 +8,7 @@ export function newSim(): ExcavatorSim {
 }
 
 export function activeCommand(over: Partial<Command> = {}): Command {
-  return { ...idleCommand(), engineOn: true, locked: false, rpm: 10, ...over };
+  return { ...idleCommand(), engineOn: true, locked: false, rpm: 10, belt: true, ...over };
 }
 
 /** 시범 운전으로 n사이클을 돌리고, 장비와 입력 기록을 돌려준다. */

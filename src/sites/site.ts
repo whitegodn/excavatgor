@@ -35,7 +35,7 @@ export const TRAINING_YARD: Site = {
   name: '평지 연습장',
   terrainSize: 32,
   cell: 0.125,
-  digZone: { x0: -1.75, x1: 1.75, z0: 3.4, z1: 8.8 },
+  digZone: { x0: -1.75, x1: 1.75, z0: 3.4, z1: 9.2 },
   dumpZone: { x0: -8.2, x1: -4.0, z0: -2.1, z1: 2.1 },
   start: { x: 0, z: 0, heading: 0 },
 };
