@@ -13,7 +13,7 @@ export type CoachLevel = 'full' | 'notices' | 'none';
 /** 3D 화면에 놓는 표지 */
 export type Marker =
   | { kind: 'target'; x: number; y: number; z: number; radius: number; state: 'active' | 'todo' | 'done' }
-  | { kind: 'bar'; x1: number; z1: number; x2: number; z2: number; height: number };
+  | { kind: 'bar'; x1: number; z1: number; x2: number; z2: number; height: number; top?: number };
 
 export interface ProgressLine {
   label: string;

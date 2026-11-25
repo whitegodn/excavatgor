@@ -12,6 +12,9 @@ export const TRUCK_YARD: Site = {
   scenery: 'construction',
 };
 
+/** 시험장: 평지 연습장과 같은 배치에 공사 현장 배경. 버킷 통과 구역을 세워 시험 방식으로 작업한다 */
+export const EXAM_YARD: Site = { ...TRAINING_YARD, name: '시험장', scenery: 'construction' };
+
 /** 평지 주행 코스 */
 export const FLAT_COURSE: Site = {
   name: '평지 주행 코스',

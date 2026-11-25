@@ -385,6 +385,8 @@ export class World {
         todo: make('mkTodo', 1, 1, 1, 0.16),
         done: make('mkDone', 0.3, 0.9, 0.45, 0.12),
         pole: make('mkPole', 1, 0.1, 0.55, 1),
+        limit: make('mkLimit', 1, 0.25, 0.2, 0.85),
+        pane: make('mkPane', 0.3, 0.9, 0.5, 0.2),
         rope: make('mkRope', 1, 0.1, 0.55, 1),
       };
     }
@@ -397,7 +399,7 @@ export class World {
    */
   syncMarkers(markers: readonly Marker[]): void {
     const key = markers
-      .map((m) => (m.kind === 'target' ? `t${m.x.toFixed(2)},${m.y.toFixed(2)},${m.z.toFixed(2)}` : `b${m.x1},${m.z1},${m.x2},${m.z2}`))
+      .map((m) => (m.kind === 'target' ? `t${m.x.toFixed(2)},${m.y.toFixed(2)},${m.z.toFixed(2)}` : `b${m.x1},${m.z1},${m.x2},${m.z2},${m.height},${m.top ?? ''}`))
       .join('|');
     if (key !== this.markerKey) {
       for (const mesh of this.markerMeshes) mesh.dispose();
@@ -419,8 +421,10 @@ export class World {
             [m.x1, m.z1],
             [m.x2, m.z2],
           ]) {
-            const pole = MeshBuilder.CreateCylinder('pole', { height: m.height + 0.3, diameter: 0.22 }, this.scene);
-            pole.position.set(x, (m.height + 0.3) / 2, z);
+            // 기둥은 위쪽 제한선까지 올라간다
+            const tall = (m.top ?? m.height) + 0.3;
+            const pole = MeshBuilder.CreateCylinder('pole', { height: tall, diameter: 0.22 }, this.scene);
+            pole.position.set(x, tall / 2, z);
             pole.material = this.markerMaterial('pole');
             pole.isPickable = false;
             this.markerMeshes.push(pole);
@@ -433,6 +437,25 @@ export class World {
           rope.material = this.markerMaterial('rope');
           rope.isPickable = false;
           this.markerMeshes.push(rope);
+          if (m.top !== undefined) {
+            // 위쪽 통과 제한선: 실제 줄이 아니라 가상의 선이라 가늘고 비치게 그린다
+            const limit = MeshBuilder.CreateTube(
+              'limit',
+              { path: [new Vector3(m.x1, m.top, m.z1), new Vector3(m.x2, m.top, m.z2)], radius: 0.05 },
+              this.scene,
+            );
+            limit.material = this.markerMaterial('limit');
+            limit.isPickable = false;
+            // 줄과 제한선 사이가 버킷이 지나갈 자리다. 옅은 막으로 보여 준다
+            const dx = m.x2 - m.x1;
+            const dz = m.z2 - m.z1;
+            const pane = MeshBuilder.CreatePlane('gatePane', { width: Math.hypot(dx, dz), height: m.top - m.height, sideOrientation: 2 }, this.scene);
+            pane.position.set((m.x1 + m.x2) / 2, (m.top + m.height) / 2, (m.z1 + m.z2) / 2);
+            pane.rotation.y = -Math.atan2(dz, dx);
+            pane.material = this.markerMaterial('pane');
+            pane.isPickable = false;
+            this.markerMeshes.push(limit, pane);
+          }
         }
       }
     }
@@ -445,7 +468,7 @@ export class World {
         this.markerMeshes[i + 1].setEnabled(m.state === 'active');
         i += 2;
       } else {
-        i += 3;
+        i += m.top !== undefined ? 5 : 3;
       }
     }
   }

@@ -1,42 +1,24 @@
 import type { LeverPattern } from '../../core/input/levers';
-import { type Command, SIM_HZ } from '../../core/sim/command';
+import type { Command } from '../../core/sim/command';
 import type { CycleReport, ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Marker, type Metrics, Objective, type ProgressLine } from '../task';
+import { bucketSpan, GateWatch, type Hurdle } from './gate';
 
-/** 선회 경로에 가로놓인 장애물(두 기둥 사이의 줄). 버킷이 이 높이 위로 넘어가야 한다. */
-export interface Hurdle {
-  x1: number;
-  z1: number;
-  x2: number;
-  z2: number;
-  height: number;
-}
+export type { Hurdle } from './gate';
 
-/** 이 횟수만큼 장애물에 닿으면 실격 (임시 기준) */
+/** 이 횟수만큼 통과 구역의 줄이나 제한선에 닿으면 실격 (임시 기준) */
 const HURDLE_FAIL = 3;
-
-function crosses(ax: number, az: number, bx: number, bz: number, h: Hurdle): boolean {
-  const side = (px: number, pz: number, qx: number, qz: number, rx: number, rz: number) =>
-    (qx - px) * (rz - pz) - (qz - pz) * (rx - px);
-  const d1 = side(h.x1, h.z1, h.x2, h.z2, ax, az);
-  const d2 = side(h.x1, h.z1, h.x2, h.z2, bx, bz);
-  const d3 = side(ax, az, bx, bz, h.x1, h.z1);
-  const d4 = side(ax, az, bx, bz, h.x2, h.z2);
-  return d1 * d2 < 0 && d3 * d4 < 0;
-}
 
 /**
  * 굴착 → 선회 → 쏟기 사이클을 정해진 횟수만큼 하는 과제.
  * 사이클 인정 여부는 시뮬레이션의 판정(굴착 구역의 흙, 덤프 구역에 쏟기, 복귀)을 그대로 쓴다.
+ * hurdle을 주면 선회할 때 버킷이 통과 구역(아래 줄과 위쪽 제한선 사이)을 지나가야 한다.
  */
 export class CycleObjective extends Objective {
-  hurdleHits = 0;
   /** 사이클마다의 결과(인정된 것과 세지 않은 것 모두). 결과 화면에 보여 준다 */
   readonly reports: CycleReport[] = [];
   private seenReports = 0;
-  private prevX = Number.NaN;
-  private prevZ = Number.NaN;
-  private quietUntil = 0;
+  private readonly watch: GateWatch | null;
 
   constructor(
     readonly cycles: number,
@@ -44,12 +26,12 @@ export class CycleObjective extends Objective {
     readonly hurdle: Hurdle | null = null,
   ) {
     super(timeLimit);
+    this.watch = hurdle ? new GateWatch(hurdle) : null;
   }
 
-  /** 버킷에서 가장 낮은 곳의 높이(처음 지면 기준) */
-  private bucketLow(sim: ExcavatorSim): number {
-    const p = sim.pose();
-    return p.baseY + Math.min(p.tipY, p.wristY) - 0.15;
+  /** 통과 구역의 줄이나 제한선에 닿은 횟수 */
+  get hurdleHits(): number {
+    return this.watch?.hits ?? 0;
   }
 
   protected step(sim: ExcavatorSim, _cmd: Command): void {
@@ -57,26 +39,15 @@ export class CycleObjective extends Objective {
       this.seenReports = sim.reportCount;
       if (sim.lastCycle) this.reports.push({ ...sim.lastCycle });
     }
-    if (this.hurdle) {
-      const p = sim.pose();
-      // 버킷 가운데가 줄을 가로지르는 순간, 버킷의 가장 낮은 곳이 줄보다 낮으면 닿은 것이다
-      const r = (p.wristR + p.tipR) / 2;
-      const cx = p.baseX + p.fwdX * r;
-      const cz = p.baseZ + p.fwdZ * r;
-      const low = this.bucketLow(sim);
-      if (!Number.isNaN(this.prevX) && crosses(this.prevX, this.prevZ, cx, cz, this.hurdle)) {
-        if (low < this.hurdle.height && this.ticks >= this.quietUntil) {
-          this.hurdleHits++;
-          this.quietUntil = this.ticks + SIM_HZ;
-          this.say(`장애물 줄에 버킷이 닿았습니다 (${this.hurdleHits}회). 줄보다 높이 들고 선회하세요`, 'warn');
-          if (this.hurdleHits >= HURDLE_FAIL) {
-            this.fatal = `장애물에 ${HURDLE_FAIL}번 닿았습니다`;
-            this.done = true;
-          }
+    if (this.watch) {
+      const event = this.watch.update(sim, this.ticks);
+      if (event === 'low' || event === 'high') {
+        this.say(this.watch.message(event), 'warn');
+        if (this.watch.hits >= HURDLE_FAIL) {
+          this.fatal = `통과 구역의 줄이나 제한선에 ${HURDLE_FAIL}번 닿았습니다`;
+          this.done = true;
         }
       }
-      this.prevX = cx;
-      this.prevZ = cz;
     }
     if (sim.cycles >= this.cycles) {
       this.done = true;
@@ -90,7 +61,12 @@ export class CycleObjective extends Objective {
   }
 
   brief(sim: ExcavatorSim): string {
-    const over = this.hurdle ? ' 선회할 때는 버킷을 장애물 줄보다 높이 드세요.' : '';
+    const h = this.hurdle;
+    const over = !h
+      ? ''
+      : h.top === undefined
+        ? ' 선회할 때는 버킷을 장애물 줄보다 높이 드세요.'
+        : ` 선회할 때는 버킷을 줄(${h.height.toFixed(1)}m)과 제한선(${h.top.toFixed(1)}m) 사이 높이로 지나가세요.`;
     return `노란 구역의 흙을 파서 파란 구역에 쏟으세요 (${Math.min(sim.cycles, this.cycles)}/${this.cycles}사이클).${over}`;
   }
 
@@ -98,15 +74,23 @@ export class CycleObjective extends Objective {
     const lines: ProgressLine[] = [
       { label: '완료한 사이클', value: `${Math.min(sim.cycles, this.cycles)} / ${this.cycles}` },
     ];
-    if (this.hurdle) {
-      const low = this.bucketLow(sim);
+    const h = this.hurdle;
+    if (h) {
+      const span = bucketSpan(sim);
       lines.push({
-        label: `버킷 바닥 높이 (줄 ${this.hurdle.height.toFixed(1)}m)`,
-        value: `${low.toFixed(2)} m`,
-        tone: low < this.hurdle.height ? 'warn' : 'good',
+        label: `버킷 바닥 높이 (줄 ${h.height.toFixed(1)}m)`,
+        value: `${span.low.toFixed(2)} m`,
+        tone: span.low < h.height ? 'warn' : 'good',
       });
+      if (h.top !== undefined) {
+        lines.push({
+          label: `버킷 위쪽 높이 (제한선 ${h.top.toFixed(1)}m)`,
+          value: `${span.high.toFixed(2)} m`,
+          tone: span.high > h.top ? 'warn' : 'good',
+        });
+      }
       lines.push({
-        label: '장애물 접촉',
+        label: '통과 구역 접촉',
         value: `${this.hurdleHits} 회`,
         tone: this.hurdleHits > 0 ? 'warn' : undefined,
       });

@@ -13,8 +13,10 @@ import {
 import { finalize, type Score, scoreItem } from '../core/scoring/score';
 import { type Command, DT, SIM_HZ } from '../core/sim/command';
 import { clamp } from '../core/sim/math';
-import { LEVELS, taskById, TASKS } from '../curriculum/excavatorLicense';
+import { LEVELS, PROVISIONAL_HURDLE, taskById, TASKS } from '../curriculum/excavatorLicense';
 import { CycleObjective } from '../curriculum/objectives/cycleObjective';
+import { GateWatch } from '../curriculum/objectives/gate';
+import { PassObjective } from '../curriculum/objectives/passObjective';
 import { DriveObjective } from '../curriculum/objectives/driveObjective';
 import { TruckObjective } from '../curriculum/objectives/truckObjective';
 import { Progress } from '../curriculum/progress';
@@ -45,6 +47,8 @@ const world = new World(canvas, sim, TRAINING_YARD);
 const hud = new Hud(document.getElementById('hud')!);
 const screens = new Screens(document.getElementById('screen')!);
 const coach = new Coach();
+/** 자유 연습에서 O 키로 켜는 버킷 통과 구역. 켜져 있으면 접촉과 통과를 알려 준다 */
+let practiceGate: GateWatch | null = null;
 const audio = new SimAudio();
 // 브라우저는 사용자가 키나 마우스를 누른 뒤에만 소리를 허용한다
 for (const ev of ['keydown', 'pointerdown']) window.addEventListener(ev, () => audio.start(), { passive: true });
@@ -138,6 +142,7 @@ function begin(t: TaskDef | null): void {
   coach.reset();
   // 도움 없는 과제(시험 방식)에서는 코치가 화면에 말하지 않고 기록만 한다. 기록은 결과 화면에 나온다
   coach.muted = t?.coach === 'none';
+  practiceGate = null;
   world.setSim(sim);
   mode = 'play';
   screens.hide();
@@ -253,6 +258,22 @@ keyboard.onAction = (action: KeyAction) => {
   switch (action) {
     case 'belt':
       if (!demo) switches.belt = !switches.belt;
+      break;
+    case 'gate':
+      if (task || demo) coach.say(sim, 'noGate', '통과 구역 켜고 끄기는 자유 연습에서만 됩니다. 과제로는 시험 코스의 L3-3, L3-4에 있습니다', 'warn', 4);
+      else {
+        practiceGate = practiceGate ? null : new GateWatch(PROVISIONAL_HURDLE);
+        coach.say(
+          sim,
+          'gate',
+          practiceGate
+            ? `버킷 통과 구역을 세웠습니다. 선회할 때 버킷이 줄(${PROVISIONAL_HURDLE.height.toFixed(1)}m)과 제한선(${(PROVISIONAL_HURDLE.top ?? 0).toFixed(1)}m) 사이로 지나가게 하세요`
+            : '버킷 통과 구역을 치웠습니다',
+          'good',
+          6,
+          0,
+        );
+      }
       break;
     case 'mute':
       storage?.setItem('excavator-mute', audio.toggleMute() ? '1' : '0');
@@ -384,6 +405,11 @@ function tick(): void {
   // 굴착 코치는 자유 연습과 굴착·상차 과제에서만 쓴다. 공중 조작·절차·주행 과제에는 맞지 않는 조언이다
   if (!task || objective instanceof CycleObjective || objective instanceof TruckObjective) coach.update(sim, cmd, pattern);
   else coach.expire(sim);
+  if (!task && practiceGate) {
+    const event = practiceGate.update(sim, sim.tick);
+    if (event === 'pass') coach.say(sim, 'gatePass', `통과 구역을 깨끗하게 지나갔습니다 (${practiceGate.passes}번째)`, 'good', 3, 0);
+    else if (event) coach.push(sim, practiceGate.message(event), 'warn');
+  }
   if (objective) {
     objective.update(sim, cmd);
     for (const e of objective.events.splice(0)) coach.push(sim, e.text, e.kind);
@@ -435,7 +461,7 @@ function draw(): void {
     lastNotice = coach.notice;
     if (coach.notice && mode === 'play') audio.blip(coach.notice.kind);
   }
-  world.syncMarkers(objective ? objective.markers(sim) : []);
+  world.syncMarkers(objective ? objective.markers(sim) : practiceGate ? [{ kind: 'bar', ...practiceGate.gate }] : []);
   hud.update({
     sim,
     belt: demo ? true : switches.belt,
@@ -463,7 +489,14 @@ function draw(): void {
           }
         : null,
     focus: objective ? objective.focus() : null,
-    hurdle: objective instanceof CycleObjective ? objective.hurdle : null,
+    hurdle:
+      objective instanceof CycleObjective
+        ? objective.hurdle
+        : objective instanceof PassObjective
+          ? objective.gate
+          : !task && practiceGate
+            ? practiceGate.gate
+            : null,
     fps,
     verify,
   });

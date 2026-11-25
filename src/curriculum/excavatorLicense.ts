@@ -3,6 +3,7 @@ import { ramp, scoreItem, type ScoreItem } from '../core/scoring/score';
 import { DEG } from '../core/sim/math';
 import { TRAINING_YARD } from '../sites/site';
 import { CycleObjective, type Hurdle } from './objectives/cycleObjective';
+import { PassObjective } from './objectives/passObjective';
 import { ProcedureObjective } from './objectives/procedureObjective';
 import { type JointTarget, TargetObjective } from './objectives/targetObjective';
 import type { LevelDef, Metrics, TaskDef } from './task';
@@ -83,8 +84,8 @@ function cycleScore(par: number, limit: number, hurdle = false) {
           ? '안전벨트 미착용'
           : hurdle
             ? m.hurdleHits === 0
-              ? '장애물 접촉 없음'
-              : `장애물 접촉 ${m.hurdleHits}회 (1회 5점)`
+              ? '통과 구역 접촉 없음'
+              : `통과 구역 접촉 ${m.hurdleHits}회 (1회 5점)`
             : '위반 없음',
       ),
     ];
@@ -118,7 +119,12 @@ function targetTask(
 }
 
 /** 임시 규격: 굴착 구역과 덤프 구역 사이에 가로놓인 높이 1.3m의 줄 */
-export const PROVISIONAL_HURDLE: Hurdle = { x1: -2.2, z1: 2.2, x2: -6.2, z2: 6.2, height: 1.3 };
+/**
+ * 버킷 통과 구역(임시 규격): 굴착 구역과 덤프 구역 사이의 두 기둥.
+ * 버킷은 아래 줄(1.3m)보다 높게, 위쪽 통과 제한선(4.0m)보다 낮게 지나가야 한다.
+ * 실기시험 요구사항에 있는 방식이지만 높이 수치는 공식 도면을 확인하지 못해 임시로 정했다.
+ */
+export const PROVISIONAL_HURDLE: Hurdle = { x1: -2.2, z1: 2.2, x2: -6.2, z2: 6.2, height: 1.3, top: 4.0 };
 
 export const LEVELS: LevelDef[] = [
   { level: 0, name: '입문', summary: '장비 부위와 말뜻, 시동부터 종료까지의 절차' },
@@ -331,15 +337,52 @@ export const TASKS: TaskDef[] = [
   {
     id: 'L3-3',
     level: 3,
-    title: '장애물 넘겨 쏟기 (시험 방식)',
-    summary: '선회 경로의 줄을 넘겨 4사이클, 도움 없음',
+    title: '버킷 통과 구역 높이 연습',
+    summary: '줄과 제한선 사이로 버킷을 여섯 번 지나가기',
     brief: [
-      '굴착 구역과 덤프 구역 사이에 높이 1.3m의 줄이 있습니다. 버킷을 줄보다 높이 들고 선회해야 합니다.',
-      '4사이클을 4분 안에 합니다. 단계 안내와 실수 알림이 없고, 줄에 닿았을 때만 알려 줍니다. 결과 화면에서 사이클별 기록과 실수를 볼 수 있습니다.',
-      '줄에 닿으면 감점이고, 3번 닿으면 실격입니다.',
-      '※ 줄 높이, 시간, 횟수, 감점·실격 기준은 공식 시험 규격을 확인하기 전의 임시 값입니다.',
+      '실기시험의 굴착작업에는 굴착 지점과 쏟는 지점 사이에 기둥(폴) 두 개가 서 있습니다. 버킷은 그 사이의 "버킷 통과 구역"으로만 지나가야 합니다.',
+      '아래에는 줄(1.3m)이, 위에는 가상의 통과 제한선(4.0m)이 있습니다. 버킷 바닥은 줄보다 높게, 버킷 위쪽은 제한선보다 낮게 맞추세요. 초록빛 막이 지나갈 자리입니다.',
+      '흙은 파지 않습니다. 높이를 맞춘 뒤 선회로 통과 구역을 왼쪽·오른쪽으로 여섯 번 지나가면 끝입니다.',
+      '오른쪽 과제 표시에 버킷 바닥과 위쪽 높이가 나오고, 왼쪽 자세 그림에 두 선이 그려집니다.',
+      '※ 두 선의 높이는 공식 도면을 확인하기 전의 임시 값입니다.',
     ],
-    passText: '60점 이상. 장애물에 3번 닿거나 안전벨트 없이 움직이면 실격.',
+    passText: '60점 이상. 통과 50, 접촉 없음 30, 시간 20. 안전벨트 없이 움직이면 실격.',
+    coach: 'full',
+    timeLimit: 180,
+    passScore: 60,
+    provisional: true,
+    site: TRAINING_YARD,
+    create: () => new PassObjective(PROVISIONAL_HURDLE, 6, 180),
+    score: (m) => [
+      scoreItem('pass', '통과', 50, m.passes / m.target, `깨끗한 통과 ${m.passes} / ${m.target}번`),
+      scoreItem(
+        'clean',
+        '접촉 없음',
+        30,
+        m.belt > 0 ? 0 : Math.max(0, 30 - 10 * m.hits) / 30,
+        m.belt > 0 ? '안전벨트 미착용' : m.hits === 0 ? '줄과 제한선에 닿지 않음' : `접촉 ${m.hits}회 (1회 10점)`,
+      ),
+      scoreItem(
+        'time',
+        '시간',
+        20,
+        m.passes >= m.target ? ramp(m.time, 70, 180) : 0,
+        m.passes >= m.target ? `${m.time.toFixed(1)}초 (70초 이내 만점, 180초부터 0점)` : '횟수를 채우지 못해 0점',
+      ),
+    ],
+  },
+  {
+    id: 'L3-4',
+    level: 3,
+    title: '통과 구역 지나 쏟기 (시험 방식)',
+    summary: '버킷 통과 구역을 지나 4사이클, 도움 없음',
+    brief: [
+      '굴착 구역과 덤프 구역 사이에 버킷 통과 구역이 있습니다. 버킷을 아래 줄(1.3m)보다 높게, 위쪽 통과 제한선(4.0m)보다 낮게 들고 선회해야 합니다.',
+      '4사이클을 4분 안에 합니다. 단계 안내와 실수 알림이 없고, 줄이나 제한선에 닿았을 때만 알려 줍니다. 결과 화면에서 사이클별 기록과 실수를 볼 수 있습니다.',
+      '줄이나 제한선에 닿으면 감점이고, 3번 닿으면 실격입니다. (실제 시험에서는 한 번만 닿아도 실격입니다.)',
+      '※ 두 선의 높이, 시간, 횟수, 감점·실격 기준은 공식 시험 규격을 확인하기 전의 임시 값입니다.',
+    ],
+    passText: '60점 이상. 통과 구역에 3번 닿거나 안전벨트 없이 움직이면 실격.',
     coach: 'none',
     timeLimit: 240,
     passScore: 60,

@@ -1,5 +1,7 @@
 import { ramp, scoreItem, type ScoreItem } from '../core/scoring/score';
-import { FLAT_COURSE, HAUL_SITE, HILL_COURSE, ROAD_COURSE, TRUCK_YARD } from '../sites/simSites';
+import { EXAM_YARD, FLAT_COURSE, HAUL_SITE, HILL_COURSE, ROAD_COURSE, TRUCK_YARD } from '../sites/simSites';
+import { PROVISIONAL_HURDLE } from './excavatorLicense';
+import { CycleObjective } from './objectives/cycleObjective';
 import { type Checkpoint, DriveObjective } from './objectives/driveObjective';
 import { HaulObjective } from './objectives/haulObjective';
 import { TruckObjective } from './objectives/truckObjective';
@@ -122,7 +124,13 @@ function haulScore(par: number, limit: number) {
         all ? ramp(m.time, par, limit) : 0,
         all ? `${m.time.toFixed(1)}초 (${par}초 이내 만점, ${limit}초부터 0점)` : '횟수를 채우지 못해 0점',
       ),
-      scoreItem('safety', '안전', 15, m.belt > 0 ? 0 : 1, m.belt > 0 ? '안전벨트 미착용' : '위반 없음'),
+      scoreItem(
+        'safety',
+        '안전',
+        15,
+        m.belt > 0 ? 0 : Math.max(0, 15 - 5 * (m.hurdleHits ?? 0)) / 15,
+        m.belt > 0 ? '안전벨트 미착용' : m.hurdleHits > 0 ? `통과 구역 접촉 ${m.hurdleHits}회 (1회 5점)` : '위반 없음',
+      ),
     ];
   };
 }
@@ -244,6 +252,26 @@ export const STAGES: TaskDef[] = [
     site: TRUCK_YARD,
     create: () => new TruckObjective(3, 360),
     score: truckScore(160, 360),
+  },
+  {
+    id: 'S3-3',
+    level: 3,
+    title: '통과 구역 지나 쏟기',
+    summary: '줄과 제한선 사이로 버킷을 지나 3사이클',
+    brief: [
+      '굴착 구역과 파란 구역 사이에 기둥 두 개가 서 있습니다. 버킷은 그 사이의 통과 구역으로 지나가야 합니다.',
+      '버킷 바닥은 아래 줄(1.3m)보다 높게, 버킷 위쪽은 통과 제한선(4.0m)보다 낮게 맞추고 선회하세요. 초록빛 막이 지나갈 자리입니다.',
+      '세 번 파서 쏟습니다. 단계 안내는 없고 실수 알림은 나옵니다. 줄이나 제한선에 3번 닿으면 실격입니다.',
+      '높이 맞추기가 처음이면 시험 코스의 L3-3(버킷 통과 구역 높이 연습)을 먼저 해 보세요.',
+    ],
+    passText: '60점 이상. 운반량 40, 흘림 20, 시간 25, 안전 15. 통과 구역에 3번 닿으면 실격.',
+    coach: 'notices',
+    timeLimit: 300,
+    passScore: 60,
+    provisional: true,
+    site: EXAM_YARD,
+    create: () => new CycleObjective(3, 300, PROVISIONAL_HURDLE),
+    score: haulScore(150, 300),
   },
 ];
 

@@ -32,7 +32,7 @@ export interface HudState {
   /** 지금 향해야 할 목표 지점 */
   focus: { x: number; y: number; z: number; radius: number } | null;
   /** 선회 경로의 장애물 줄 */
-  hurdle: { x1: number; z1: number; x2: number; z2: number; height: number } | null;
+  hurdle: { x1: number; z1: number; x2: number; z2: number; height: number; top?: number } | null;
   /** 운전석 시점에서 조종 장치 이름표를 붙일 화면 위치 */
   tags: { id: string; x: number; y: number }[];
   fps: number;
@@ -83,6 +83,7 @@ const TEMPLATE = `
       <line id="svDrop" class="dropline"></line>
       <circle id="svTarget" class="target"></circle>
       <g id="svHurdle"><line class="hurdle" x1="0" x2="${SV_W}"></line><text class="hurdleT" x="4"></text></g>
+      <g id="svLimit"><line class="hurdle" x1="0" x2="${SV_W}" stroke-dasharray="6 5"></line><text class="hurdleT" x="4"></text></g>
       <text class="note" x="${SV_W - 4}" y="${sy(0) - 4}" text-anchor="end">처음 지면</text>
     </svg>
     <div class="poseRow">
@@ -260,6 +261,7 @@ const TEMPLATE = `
       <div class="k"><span>아래 레버 표시 접기</span><span><kbd>X</kbd></span></div>
       <div class="k"><span>처음부터 다시</span><span><kbd>Backspace</kbd></span></div>
       <div class="k"><span>일시 정지 · 메뉴</span><span><kbd>Esc</kbd></span></div>
+      <div class="k"><span>통과 구역(줄과 제한선) 켜고 끄기 · 자유 연습</span><span><kbd>O</kbd></span></div>
       <div class="k"><span>소리 켜고 끄기</span><span><kbd>N</kbd></span></div>
       <div class="k"><span>그래픽 품질 (낮음·보통·높음)</span><span><kbd>Z</kbd></span></div>
       <div class="k"><span>개발자용 측정 표시</span><span><kbd>M</kbd></span></div>
@@ -416,6 +418,16 @@ export class Hud {
 
     // 장애물 줄: 옆모습에는 넘어야 할 높이선으로, 윗모습에는 줄의 위치로
     el.svHurdle.style.display = hurdle ? '' : 'none';
+    el.svLimit.style.display = hurdle?.top !== undefined ? '' : 'none';
+    if (hurdle?.top !== undefined) {
+      const y = sy(hurdle.top);
+      const ll = el.svLimit.querySelector('line')!;
+      ll.setAttribute('y1', y.toFixed(1));
+      ll.setAttribute('y2', y.toFixed(1));
+      const lt = el.svLimit.querySelector('text')!;
+      lt.setAttribute('y', (y - 4).toFixed(1));
+      lt.textContent = `통과 제한선 ${hurdle.top.toFixed(1)}m`;
+    }
     el.tvHurdle.style.display = hurdle ? '' : 'none';
     if (hurdle) {
       const y = sy(hurdle.height);
@@ -424,7 +436,7 @@ export class Hud {
       hl.setAttribute('y2', y.toFixed(1));
       const ht = el.svHurdle.querySelector('text')!;
       ht.setAttribute('y', (y - 4).toFixed(1));
-      ht.textContent = `장애물 줄 ${hurdle.height.toFixed(1)}m`;
+      ht.textContent = `${hurdle.top === undefined ? '장애물 줄' : '아래 줄'} ${hurdle.height.toFixed(1)}m`;
       attr(el.tvHurdle, { x1: tx(hurdle.x1), y1: tz(hurdle.z1), x2: tx(hurdle.x2), y2: tz(hurdle.z2) });
     }
 

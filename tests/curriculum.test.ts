@@ -4,6 +4,8 @@ import { type Command, idleCommand, SIM_HZ } from '../src/core/sim/command';
 import { clamp, DEG } from '../src/core/sim/math';
 import { LEVELS, PROVISIONAL_HURDLE, taskById, TASKS } from '../src/curriculum/excavatorLicense';
 import { CycleObjective } from '../src/curriculum/objectives/cycleObjective';
+import { bucketSpan, GateWatch } from '../src/curriculum/objectives/gate';
+import { PassObjective } from '../src/curriculum/objectives/passObjective';
 import { ProcedureObjective } from '../src/curriculum/objectives/procedureObjective';
 import { TargetObjective } from '../src/curriculum/objectives/targetObjective';
 import { Progress } from '../src/curriculum/progress';
@@ -190,8 +192,69 @@ describe('굴착 사이클 과제 (L3)', () => {
     expect(items.find((it) => it.id === 'clean')!.points).toBe(0);
   });
 
-  it('L3-3: 버킷을 높이 들고 선회하면 장애물에 닿지 않고 합격', () => {
-    const r = runPilot('L3-3', new Autopilot(4));
+  it('통과 구역: 줄보다 낮으면 아래 줄 접촉, 제한선보다 높으면 위쪽 접촉, 그 사이면 통과', () => {
+    const swingThrough = (boomSeconds: number) => {
+      const sim = new ExcavatorSim(taskById('L3-3')!.site);
+      const watch = new GateWatch(PROVISIONAL_HURDLE);
+      const events: string[] = [];
+      const run = (cmd: Command, seconds: number) => {
+        for (let i = 0; i < seconds * SIM_HZ; i++) {
+          sim.step(cmd);
+          const e = watch.update(sim, sim.tick);
+          if (e) events.push(e);
+        }
+      };
+      run(on({ arm: -1 }), 1.0);
+      run(on({ boom: 1 }), boomSeconds);
+      run(on({ swing: -1 }), 2.4);
+      run(on(), 1.5);
+      return { events, span: bucketSpan(sim), watch };
+    };
+    // 처음 자세 그대로면 버킷이 줄(1.3m)보다 낮다
+    const low = swingThrough(0);
+    expect(low.span.low).toBeLessThan(PROVISIONAL_HURDLE.height);
+    expect(low.events).toEqual(['low']);
+    expect(low.watch.hits).toBe(1);
+    // 붐을 끝까지 올리면 위쪽 제한선을 넘는다
+    const high = swingThrough(6);
+    expect(high.span.high).toBeGreaterThan(PROVISIONAL_HURDLE.top!);
+    expect(high.events).toEqual(['high']);
+    // 알맞게 올리면 통과
+    const ok = swingThrough(0.4);
+    expect(ok.span.low).toBeGreaterThan(PROVISIONAL_HURDLE.height);
+    expect(ok.span.high).toBeLessThan(PROVISIONAL_HURDLE.top!);
+    expect(ok.events).toEqual(['pass']);
+    expect(ok.watch.passes).toBe(1);
+  });
+
+  it('L3-3: 높이를 맞추고 여섯 번 왔다 갔다 하면 합격', () => {
+    const { task, sim, objective } = begin('L3-3');
+    const o = objective as PassObjective;
+    const run = (cmd: Command, seconds: number) => {
+      for (let i = 0; i < seconds * SIM_HZ && !o.done; i++) {
+        sim.step(cmd);
+        o.update(sim, cmd);
+      }
+    };
+    run(on({ arm: -1 }), 1.0);
+    run(on({ boom: 1 }), 0.4);
+    for (let k = 0; k < 3 && !o.done; k++) {
+      run(on({ swing: -1 }), 2.4);
+      run(on(), 1.2);
+      run(on({ swing: 1 }), 2.4);
+      run(on(), 1.2);
+    }
+    expect(o.watch.passes).toBe(6);
+    expect(o.watch.hits).toBe(0);
+    expect(o.done).toBe(true);
+    const result = score(task, sim, o);
+    expect(result.items.reduce((sum, it) => sum + it.max, 0)).toBe(100);
+    expect(result.pass).toBe(true);
+  });
+
+  it('L3-4: 버킷을 높이 들고 선회하면 장애물에 닿지 않고 합격', () => {
+    // 빈 버킷은 위아래로 1.6m쯤 된다. 2.1m 높이로 들고 다니면 줄과 제한선 사이에 들어간다
+    const r = runPilot('L3-4', new Autopilot(4, undefined, 2.1));
     expect(r.sim.cycles).toBe(4);
     expect((r.objective as CycleObjective).hurdleHits).toBe(0);
     expect(r.result.fatal).toBeNull();
@@ -199,7 +262,7 @@ describe('굴착 사이클 과제 (L3)', () => {
   });
 
   it('버킷을 낮게 든 채 장애물 쪽으로 선회하면 접촉으로 세고, 3번이면 실격', () => {
-    const sim = new ExcavatorSim(taskById('L3-3')!.site);
+    const sim = new ExcavatorSim(taskById('L3-4')!.site);
     const objective = new CycleObjective(4, 240, PROVISIONAL_HURDLE);
     const run = (cmd: Command, seconds: number) => {
       for (let i = 0; i < seconds * SIM_HZ && !objective.done; i++) {
