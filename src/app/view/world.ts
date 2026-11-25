@@ -20,10 +20,11 @@ import {
 import type { Marker } from '../../curriculum/task';
 import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Site, type Zone, zoneAt } from '../../sites/site';
-import { applySoil, Atmosphere, HORIZON, type Quality, QUALITY_NAMES } from './atmosphere';
+import { photoMaterial } from './assets';
+import { Atmosphere, HORIZON, type Quality, QUALITY_NAMES } from './atmosphere';
 import { type CabControls, type CabPart, ExcavatorView } from './excavatorView';
 import { buildScenery } from './scenery';
-import { TerrainView } from './terrainView';
+import { GROUND_LOOK, GROUND_SUN, GROUND_TINT, TerrainView } from './terrainView';
 
 export type CameraMode = 'cab' | 'ext';
 
@@ -88,11 +89,11 @@ export class World {
     this.terrainView = new TerrainView(scene, sim.terrain);
     const outer = MeshBuilder.CreateGround('outer', { width: 600, height: 600 }, scene);
     outer.position.y = -0.03;
-    const outerMat = new StandardMaterial('outerMat', scene);
-    outerMat.diffuseColor = new Color3(0.8, 0.73, 0.56);
-    outerMat.specularColor = Color3.Black();
-    applySoil(outerMat, scene, 200);
+    // 지형의 바탕색(꼭짓점 색)과 같은 색을 곱해 경계가 보이지 않게 한다
+    const outerMat = photoMaterial(scene, 'outerPhoto', 'brown_mud_02', 200, new Color3(0.8 * GROUND_TINT.r, 0.73 * GROUND_TINT.g, 0.56 * GROUND_TINT.b), GROUND_LOOK);
+    outerMat.directIntensity = GROUND_SUN;
     outer.material = outerMat;
+    outer.receiveShadows = true;
     outer.isPickable = false;
 
     this.addScenery();

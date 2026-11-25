@@ -13,6 +13,7 @@ import {
   SSAO2RenderingPipeline,
   StandardMaterial,
 } from '@babylonjs/core';
+import { loadSky } from './assets';
 
 /** 그래픽 품질. 낮음은 저사양 PC용, 높음은 음영과 빛 번짐까지 켠다 */
 export type Quality = 'low' | 'medium' | 'high';
@@ -87,69 +88,6 @@ export function makeSky(scene: Scene): Mesh {
   return sky;
 }
 
-/**
- * 흙의 잔무늬와 요철. 꼭짓점 색에 곱해져 흙 알갱이처럼 보이게 한다.
- * tile: 무늬 한 장이 덮는 넓이에 맞춘 반복 수
- */
-export function applySoil(mat: StandardMaterial, scene: Scene, tile: number): void {
-  const size = 256;
-  const rand = rng(777);
-  const coarse = new Float32Array(33 * 33).map(() => rand());
-  const height = new Float32Array(size * size);
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      // 굵은 얼룩(부드럽게 이은 것) + 고운 알갱이 + 드문 자갈
-      const gx = (x / size) * 32;
-      const gy = (y / size) * 32;
-      const ix = Math.floor(gx);
-      const iy = Math.floor(gy);
-      const tx = gx - ix;
-      const ty = gy - iy;
-      const at = (i: number, j: number) => coarse[(j % 32) * 33 + (i % 32)];
-      const big = (at(ix, iy) * (1 - tx) + at(ix + 1, iy) * tx) * (1 - ty) + (at(ix, iy + 1) * (1 - tx) + at(ix + 1, iy + 1) * tx) * ty;
-      let v = big * 0.55 + rand() * 0.45;
-      if (rand() < 0.012) v = rand() < 0.5 ? 0.05 : 1;
-      height[y * size + x] = v;
-    }
-  }
-  const diffuse = new DynamicTexture('soilTex', size, scene, true);
-  const bump = new DynamicTexture('soilBump', size, scene, true);
-  const dctx = diffuse.getContext() as unknown as CanvasRenderingContext2D;
-  const bctx = bump.getContext() as unknown as CanvasRenderingContext2D;
-  const dimg = dctx.createImageData(size, size);
-  const bimg = bctx.createImageData(size, size);
-  const h = (x: number, y: number) => height[((y + size) % size) * size + ((x + size) % size)];
-  for (let y = 0; y < size; y++) {
-    for (let x = 0; x < size; x++) {
-      const k = (y * size + x) * 4;
-      const v = 196 + h(x, y) * 59;
-      dimg.data[k] = v;
-      dimg.data[k + 1] = v * 0.985;
-      dimg.data[k + 2] = v * 0.96;
-      dimg.data[k + 3] = 255;
-      const dx = (h(x + 1, y) - h(x - 1, y)) * 1.6;
-      const dy = (h(x, y + 1) - h(x, y - 1)) * 1.6;
-      const len = Math.hypot(dx, dy, 1);
-      bimg.data[k] = (-dx / len) * 127 + 128;
-      bimg.data[k + 1] = (-dy / len) * 127 + 128;
-      bimg.data[k + 2] = (1 / len) * 127 + 128;
-      bimg.data[k + 3] = 255;
-    }
-  }
-  dctx.putImageData(dimg, 0, 0);
-  bctx.putImageData(bimg, 0, 0);
-  diffuse.update();
-  bump.update();
-  for (const t of [diffuse, bump]) {
-    t.uScale = tile;
-    t.vScale = tile;
-  }
-  mat.diffuseTexture = diffuse;
-  mat.bumpTexture = bump;
-  bump.level = 0.9;
-  mat.specularColor = new Color3(0.04, 0.04, 0.04);
-}
-
 /** 색 보정과 화면 효과, 그림자 품질을 한곳에서 다룬다 */
 export class Atmosphere {
   quality: Quality = 'medium';
@@ -163,7 +101,9 @@ export class Atmosphere {
     private readonly shadows: ShadowGenerator,
     private readonly cameras: Camera[],
   ) {
-    makeSky(scene);
+    // 먼저 그림으로 그린 하늘을 띄우고, 하늘 사진을 다 읽으면 바꾼다. 사진을 못 읽으면 그림 하늘이 남는다
+    const painted = makeSky(scene);
+    loadSky(scene, () => painted.dispose(false, true));
     // 밝은 곳이 하얗게 날아가지 않게 눌러 주고(톤 매핑), 대비를 조금 올린다
     const ip = scene.imageProcessingConfiguration;
     ip.toneMappingEnabled = true;

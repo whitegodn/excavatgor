@@ -11,7 +11,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@babylonjs/core": "^9.37.2"
+    "@babylonjs/core": "^9.37.2",
+    "@babylonjs/loaders": "^9.37.2"
   },
   "devDependencies": {
     "@types/node": "^26.6.7",

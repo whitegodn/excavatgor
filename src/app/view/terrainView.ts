@@ -1,6 +1,13 @@
-import { Mesh, type Scene, StandardMaterial, Color3, VertexBuffer, VertexData } from '@babylonjs/core';
+import { Color3, Mesh, type Scene, VertexBuffer, VertexData } from '@babylonjs/core';
 import type { Terrain } from '../../core/terrain/terrain';
-import { applySoil } from './atmosphere';
+import { photoMaterial } from './assets';
+
+/** 진흙 사진에 곱하는 밝기. 꼭짓점 색과 곱해져 마른 흙빛이 된다 */
+export const GROUND_TINT = new Color3(2.3, 2.2, 2.0);
+/** 햇빛을 세게 받게 해서 그림자가 또렷이 보이게 한다 */
+export const GROUND_SUN = 2.0;
+/** 얼룩은 절반만 남기고 요철도 약하게 한다 */
+export const GROUND_LOOK = { soften: 0.45, bump: 0.55 };
 
 /** 격자점 번호로 만드는 고정 잡음(0..1). 땅 색에 얼룩을 넣어 움직임이 보이게 한다. */
 function noise(i: number, j: number): number {
@@ -62,9 +69,9 @@ export class TerrainView {
     vd.indices = indices;
     this.mesh = new Mesh('terrain', scene);
     vd.applyToMesh(this.mesh, true);
-    const mat = new StandardMaterial('terrainMat', scene);
-    mat.specularColor = Color3.Black();
-    applySoil(mat, scene, 1);
+    // 진흙 사진 질감에 꼭짓점 색(파낸 자리, 쌓인 흙)을 곱한다. 사진이 어두워서 밝기를 올려 준다
+    const mat = photoMaterial(scene, 'terrainPhoto', 'brown_mud_02', 1, GROUND_TINT, GROUND_LOOK);
+    mat.directIntensity = GROUND_SUN;
     mat.backFaceCulling = false;
     mat.twoSidedLighting = true;
     this.mesh.material = mat;
