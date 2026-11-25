@@ -9,6 +9,7 @@ export const TRUCK_YARD: Site = {
   name: '상차 작업장',
   dumpZone: { x0: -7.6, x1: -4.6, z0: -1.3, z1: 1.3 },
   truck: { bedTop: 1.9, capacity: 6 },
+  scenery: 'construction',
 };
 
 /** 평지 주행 코스 */
@@ -20,6 +21,14 @@ export const FLAT_COURSE: Site = {
   dumpZone: NO_ZONE,
   hideZones: true,
   start: { x: 0, z: -28, heading: 0 },
+  scenery: 'road',
+  route: [
+    { x: 0, z: -14 },
+    { x: 8, z: -2 },
+    { x: -8, z: 10 },
+    { x: 8, z: 22 },
+    { x: 0, z: 32 },
+  ],
 };
 
 /** 언덕 코스: 오르막과 내리막. 출발 지점 주변과 가장자리는 평평하다 */
@@ -31,6 +40,14 @@ export const HILL_COURSE: Site = {
   dumpZone: NO_ZONE,
   hideZones: true,
   start: { x: 0, z: -34, heading: 0 },
+  scenery: 'hills',
+  route: [
+    { x: 0, z: -20 },
+    { x: 10, z: -6 },
+    { x: -6, z: 8 },
+    { x: 8, z: 22 },
+    { x: 0, z: 34 },
+  ],
   shape: (x, z) => {
     const edge = Math.max(0, Math.min(1, (45 - Math.max(Math.abs(x), Math.abs(z))) / 8));
     const nearStart = Math.max(0, Math.min(1, (Math.hypot(x, z + 34) - 6) / 8));
@@ -47,6 +64,7 @@ export const HAUL_SITE: Site = {
   digZone: { x0: -1.75, x1: 1.75, z0: 3.4, z1: 9.2 },
   dumpZone: { x0: 13, x1: 18, z0: 2, z1: 7 },
   start: { x: 0, z: 0, heading: 0 },
+  scenery: 'construction',
 };
 
 /** 도로 코스: 길게 이어지는 평지 코스. 고속 단으로 달린다 */
@@ -58,4 +76,15 @@ export const ROAD_COURSE: Site = {
   dumpZone: NO_ZONE,
   hideZones: true,
   start: { x: -30, z: -32, heading: 0 },
+  scenery: 'city',
+  route: [
+    { x: -30, z: -12 },
+    { x: -22, z: 8 },
+    { x: -4, z: 18 },
+    { x: 14, z: 10 },
+    { x: 22, z: -8 },
+    { x: 12, z: -26 },
+    { x: -8, z: -30 },
+    { x: -30, z: -32 },
+  ],
 };

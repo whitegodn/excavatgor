@@ -112,30 +112,9 @@ function haulScore(par: number, limit: number) {
   };
 }
 
-const FLAT_GATES: Checkpoint[] = [
-  { x: 0, z: -14 },
-  { x: 8, z: -2 },
-  { x: -8, z: 10 },
-  { x: 8, z: 22 },
-  { x: 0, z: 32 },
-];
-const HILL_GATES: Checkpoint[] = [
-  { x: 0, z: -20 },
-  { x: 10, z: -6 },
-  { x: -6, z: 8 },
-  { x: 8, z: 22 },
-  { x: 0, z: 34 },
-];
-const ROAD_GATES: Checkpoint[] = [
-  { x: -30, z: -12 },
-  { x: -22, z: 8 },
-  { x: -4, z: 18 },
-  { x: 14, z: 10 },
-  { x: 22, z: -8 },
-  { x: 12, z: -26 },
-  { x: -8, z: -30 },
-  { x: -30, z: -32 },
-];
+const FLAT_GATES: Checkpoint[] = FLAT_COURSE.route!;
+const HILL_GATES: Checkpoint[] = HILL_COURSE.route!;
+const ROAD_GATES: Checkpoint[] = ROAD_COURSE.route!;
 
 const DRIVE_PASS = '60점 이상. 코스 50, 시간 40, 안전 10. 안전벨트 없이 움직이면 실격.';
 

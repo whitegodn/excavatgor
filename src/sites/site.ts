@@ -22,6 +22,10 @@ export interface Site {
   truck?: { bedTop: number; capacity: number };
   /** 굴착·덤프 구역을 쓰지 않는 현장(주행 코스) */
   hideZones?: boolean;
+  /** 배경: 공사 현장 / 한적한 도로 / 도심 / 언덕. 없으면 빈 연습장 */
+  scenery?: 'construction' | 'road' | 'city' | 'hills';
+  /** 주행 코스의 깃발 위치. 길도 이 순서로 깔린다 */
+  route?: { x: number; z: number }[];
 }
 
 export type ZoneKind = 'dig' | 'dump' | 'none';

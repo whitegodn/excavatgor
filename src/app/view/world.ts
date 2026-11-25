@@ -21,6 +21,7 @@ import type { Marker } from '../../curriculum/task';
 import type { ExcavatorSim } from '../../equipment/excavator/excavatorSim';
 import { type Site, type Zone, zoneAt } from '../../sites/site';
 import { type CabControls, type CabPart, ExcavatorView } from './excavatorView';
+import { buildScenery } from './scenery';
 import { TerrainView } from './terrainView';
 
 export type CameraMode = 'cab' | 'ext';
@@ -40,6 +41,8 @@ export class World {
   private readonly dustEmitter = new Vector3();
   private markerMeshes: Mesh[] = [];
   private truckSoil: Mesh | null = null;
+  /** 지금 현장의 처음 지면 높이 (배경을 땅에 맞춰 놓는 데 쓴다) */
+  private groundAt: (x: number, z: number) => number = () => 0;
   private markerKey = '';
   private markerMats: Record<string, StandardMaterial> | null = null;
 
@@ -55,7 +58,7 @@ export class World {
     scene.clearColor = new Color4(sky.r, sky.g, sky.b, 1);
     scene.fogMode = Scene.FOGMODE_LINEAR;
     scene.fogColor = sky;
-    scene.fogStart = 70;
+    scene.fogStart = 90;
     scene.fogEnd = 260;
 
     const hemi = new HemisphericLight('hemi', new Vector3(0.2, 1, 0.1), scene);
@@ -83,6 +86,7 @@ export class World {
     outer.isPickable = false;
 
     this.addScenery();
+    this.groundAt = (x, z) => sim.terrain.heightAt(x, z);
     this.buildSite();
 
     this.excavatorView = new ExcavatorView(scene, sim.spec, shadows);
@@ -234,6 +238,7 @@ export class World {
     for (const m of scene.meshes.filter((x) => /^(dig|dump)(Lines|Post)$|^truck/.test(x.name))) m.dispose();
     this.truckSoil = null;
     const site = this.site;
+    buildScenery(scene, site, this.groundAt);
     // 연습장의 컨테이너와 고깔은 넓은 코스에서는 치운다
     const yard = !site.shape && site.terrainSize <= 40;
     for (const m of scene.meshes) if (m.name === 'prop' || m.name === 'cone') m.setEnabled(yard);
@@ -374,6 +379,7 @@ export class World {
     this.terrainView = new TerrainView(this.scene, sim.terrain);
     if (sim.site !== this.site) {
       this.site = sim.site;
+      this.groundAt = (x, z) => sim.terrain.heightAt(x, z);
       this.buildSite();
     }
     this.sync(sim);
