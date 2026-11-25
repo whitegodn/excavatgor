@@ -110,5 +110,5 @@ export const EXCAVATOR_14T: ExcavatorSpec = {
   cutRateSpan: 0.35,
   pourRate: 0.8,
   spillAccel: 5.0,
-  initial: { boom: 20 * DEG, arm: -100 * DEG, bucket: -60 * DEG },
+  initial: { boom: 27 * DEG, arm: -100 * DEG, bucket: -60 * DEG },
 };

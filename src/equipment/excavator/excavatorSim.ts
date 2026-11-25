@@ -34,6 +34,9 @@ export interface Pose {
 
 const SPOOLS = ['swing', 'arm', 'boom', 'bucket', 'travelL', 'travelR'] as const;
 
+/** 버킷에서 흙이 떨어진 까닭: 파는 중 넘침 / 버킷을 펴서 쏟음 / 기울거나 흔들려 흘림 */
+type DropCause = 'dig' | 'pour' | 'slip';
+
 /** 사이클이 인정되지 않은 이유 */
 export type CycleFault = '' | 'returned' | 'none' | 'spill' | 'source';
 
@@ -118,6 +121,8 @@ export class ExcavatorSim {
   private cycleDumped = 0;
   private cycleSpilled = 0;
   private cycleReturned = 0;
+  /** 버킷을 펴서 일부러 쏟은 양 (넘침·흘림과 구분한다) */
+  private cyclePoured = 0;
 
   /** 이번 틱에 버킷에서 떨어진 흙(m³/s)과 그 위치. 화면 효과용. */
   dropRate = 0;
@@ -285,8 +290,10 @@ export class ExcavatorSim {
 
     // 6) 주행: 좌우 궤도 속도 차이로 회전한다
     const ta = sp.travelAccel * DT;
-    this.trackL += clamp(S.travelL * sp.travelMax * g - this.trackL, -ta, ta);
-    this.trackR += clamp(S.travelR * sp.travelMax * g - this.trackR, -ta, ta);
+    // 버킷을 땅에 박은 채로는 궤도가 버킷을 끌지 못한다
+    const sTravel = burial > 0.03 ? Math.min(sDig, pushResist, 0.25) : 1;
+    this.trackL += clamp(S.travelL * sp.travelMax * g * sTravel - this.trackL, -ta, ta);
+    this.trackR += clamp(S.travelR * sp.travelMax * g * sTravel - this.trackR, -ta, ta);
     if (Math.abs(this.trackL) < 1e-6 && S.travelL === 0) this.trackL = 0;
     if (Math.abs(this.trackR) < 1e-6 && S.travelR === 0) this.trackR = 0;
     const v = (this.trackL + this.trackR) / 2;
@@ -332,7 +339,10 @@ export class ExcavatorSim {
       // 낮은 쪽 입술에서 쏟아진다
       const overTip = p1.tipY <= p1.wristY;
       const d = Math.min(this.load - maxHold, sp.pourRate * DT);
-      this.drop(d, overTip ? p1.tipR : p1.wristR, overTip ? p1.tipY : p1.wristY, p1);
+      // 땅을 파는 중에 넘친 것 / 버킷을 펴서 쏟는 것 / 기울어서 흘린 것
+      const inSoil = burial > 0.02 || tipY - this.terrain.heightAt(tipX, tipZ) < 0.15;
+      const cause: DropCause = inSoil ? 'dig' : S.bucket < -0.02 ? 'pour' : 'slip';
+      this.drop(d, overTip ? p1.tipR : p1.wristR, overTip ? p1.tipY : p1.wristY, p1, cause);
     }
     const heap = this.load - 0.85 * cap;
     if (heap > 0) {
@@ -357,8 +367,9 @@ export class ExcavatorSim {
     if (this.awaitingReturn && (atDig || this.load > 0.05)) this.completeCycle();
     if (!this.cycleLoaded && this.load > 0.05) this.cycleLoaded = true;
     const emptied = this.load < 0.01;
-    // 다 쏟지 않고 흙을 남긴 채 굴착 구역으로 돌아온 경우도 한 번의 시도로 마감한다
-    const cameBack = this.cycleDumped + this.cycleSpilled > 0.05 && atDig;
+    // 조금 남긴 채(0.1m³ 이하) 굴착 구역으로 돌아온 경우도 마감한다.
+    // 그보다 많이 남겼으면 아직 끝난 것이 아니다: 마저 쏟을 때까지 같은 사이클이다.
+    const cameBack = this.cyclePoured > 0.05 && atDig && this.load <= 0.1;
     if (this.cycleLoaded && (emptied || cameBack)) {
       this.cycleLoaded = false;
       const out = this.cycleDumped + this.cycleSpilled + this.cycleReturned;
@@ -366,7 +377,10 @@ export class ExcavatorSim {
       if (this.cycleDumped < 0.12) fault = this.cycleReturned > 0.5 * out ? 'returned' : 'none';
       else if (this.cycleDumped < 0.6 * (this.cycleDumped + this.cycleSpilled)) fault = 'spill';
       else if (this.cycleFromDig < 0.7 * this.cycleCaptured) fault = 'source';
-      if (fault !== '') {
+      if (this.cycleCaptured < 0.05) {
+        // 새로 판 흙이 없다(전에 남긴 흙을 쏟았을 뿐): 사이클로도 실패로도 치지 않는다
+        this.resetCycle();
+      } else if (fault !== '') {
         this.report(false, fault, 0);
         this.restartAtDig = true;
       } else if (cameBack) this.completeCycle();
@@ -382,7 +396,7 @@ export class ExcavatorSim {
 
   /** 이번 사이클에서 흙을 쏟기 시작했는가 (안내 문구용) */
   get dumpingStarted(): boolean {
-    return this.cycleDumped + this.cycleSpilled > 0.02;
+    return this.cyclePoured > 0.02;
   }
 
   private completeCycle(): void {
@@ -408,11 +422,16 @@ export class ExcavatorSim {
       leftover: this.load,
     };
     this.reportCount++;
+    this.resetCycle();
+  }
+
+  private resetCycle(): void {
     this.cycleCaptured = 0;
     this.cycleFromDig = 0;
     this.cycleDumped = 0;
     this.cycleSpilled = 0;
     this.cycleReturned = 0;
+    this.cyclePoured = 0;
   }
 
   /** 버킷에서 가장 낮은 점 기준으로, 진행 방향 앞쪽 흙이 얼마나 높이 있는지 */
@@ -554,12 +573,16 @@ export class ExcavatorSim {
   }
 
   /** 버킷의 흙 vol을 (r, y) 아래 지면에 떨어뜨리고, 떨어진 곳에 따라 덤프/흘림으로 기록한다. */
-  private drop(vol: number, r: number, y: number, p: Pose): void {
+  private drop(vol: number, r: number, y: number, p: Pose, cause: DropCause = 'slip'): void {
     if (vol <= 0) return;
     const cx = p.baseX + p.fwdX * r;
     const cz = p.baseZ + p.fwdZ * r;
     const kind = zoneAt(this.site, cx, cz);
-    if (kind === 'dump') {
+    if (cause === 'pour') this.cyclePoured += vol;
+    if (cause === 'dig') {
+      // 파는 중에 넘친 흙은 그 자리에 남을 뿐, 흘리거나 떨어뜨린 것이 아니다
+      this.overflow += vol;
+    } else if (kind === 'dump') {
       this.dumped += vol;
       this.cycleDumped += vol;
     } else if (kind === 'dig') {

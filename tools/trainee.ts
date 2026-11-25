@@ -74,12 +74,15 @@ function describe(): string {
   const cap = sim.spec.bucketCapacity;
   const height = b.touching
     ? b.tipY < -0.03
-      ? `땅속 ${(-b.tipY).toFixed(2)}m (처음 지면 기준)`
+      ? `땅에 닿음 · 처음 지면보다 ${(-b.tipY).toFixed(2)}m 아래`
       : '땅에 닿음'
     : `지면 위 ${Math.max(0, b.above).toFixed(2)}m`;
   const swing = sim.swing / DEG;
-  const swingText = Math.abs(swing) < 0.5 ? '정면' : `${swing < 0 ? '왼쪽' : '오른쪽'} ${Math.abs(swing).toFixed(0)}°`;
-  const resist = 1 - sim.digResist;
+  const side = (deg: number) => `${deg < 0 ? '왼쪽' : '오른쪽'} ${Math.abs(deg).toFixed(0)}°`;
+  const heading = sim.heading / DEG;
+  const swingText =
+    (Math.abs(swing) < 0.5 ? '정면' : side(swing)) + (Math.abs(heading) < 0.5 ? '' : ` · 차체 ${side(heading)}`);
+  const resist = 1 - sim.soilResist;
   const resistWord = resist < 0.05 ? '없음' : resist < 0.45 ? '적당' : resist < 0.85 ? '깊음' : '막힘';
   const pct = (v: number) => `${Math.round(v * 100)}%`;
   const guide = strip(
@@ -90,7 +93,7 @@ function describe(): string {
     `  [자세] 날 끝: ${height}, 장비에서 ${p.tipR.toFixed(1)}m 앞 | 버킷 입구: ${b.facing} | 선회: ${swingText} | 버킷 위치: ${zone}`,
     `  [자세] 붐 ${pct(sim.boom.stroke)}(0=내림,100=올림) | 암 ${pct(sim.arm.stroke)}(0=폄,100=당김) | 버킷 ${pct(sim.bucket.stroke)}(0=폄,100=오므림) | 장비 위치 x=${sim.x.toFixed(1)} z=${sim.z.toFixed(1)}`,
     `  [측정] 담긴 흙 ${sim.load.toFixed(2)}m³ (${pct(sim.load / cap)}) | 굴착 저항 ${resistWord}(${pct(resist)}) | 동시 조작으로 느려짐: 이 단계 중 최대 ${pct(maxShareLoss)}`,
-    `  [측정] 파란 구역에 쏟음 ${sim.dumped.toFixed(2)}m³ | 구역 밖에 흘림 ${sim.spilled.toFixed(2)}m³ | 들다가 도로 떨어뜨림 ${sim.returned.toFixed(2)}m³`,
+    `  [측정] 파란 구역에 쏟음 ${sim.dumped.toFixed(2)}m³ | 구역 밖에 흘림 ${sim.spilled.toFixed(2)}m³ | 들다가 떨어뜨림 ${sim.returned.toFixed(2)}m³`,
     `  [측정] 완료 사이클 ${sim.cycles}회 | 이번 사이클 ${sim.cycleTime.toFixed(1)}초 | 직전 / 최단 ${sim.cycles === 0 ? '—' : `${sim.lastCycleTime.toFixed(1)} / ${sim.bestCycleTime.toFixed(1)}초`}`,
   ];
   if (guide) lines.push(`  [화면 안내] ${guide}`);

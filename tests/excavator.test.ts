@@ -241,23 +241,85 @@ describe('사이클 판정 (보완)', () => {
     expect(sim.load).toBeLessThanOrEqual(before + 0.02);
   });
 
-  it('흙을 남긴 채 굴착 구역으로 돌아와도 한 사이클로 마감하고 남긴 양을 알려 준다', () => {
+  /** 시범 운전으로 한 사이클을 돌리되, 쏟는 단계에서 버킷에 keep(m³)만큼 남으면 그만 쏟고 돌아간다 */
+  function cycleLeaving(keep: number) {
     const sim = newSim();
     const pilot = new Autopilot(1);
-    let cut = false;
     while (!pilot.done && sim.tick < 120 * SIM_HZ) {
       const cmd = pilot.next(sim);
-      // 쏟는 단계에서 절반쯤 쏟았으면 그만 쏟고 돌아간다
-      if (pilot.phase === 6 && sim.load < EXCAVATOR_14T.bucketCapacity * 0.5) {
-        pilot.phase = 7;
-        cut = true;
-      }
+      if (pilot.phase === 6 && sim.load < keep) pilot.phase = 7;
       sim.step(cmd);
     }
-    expect(cut).toBe(true);
+    return sim;
+  }
+
+  it('흙을 조금 남긴 채 돌아오면 한 사이클로 마감하고 남긴 양을 알려 준다', () => {
+    const sim = cycleLeaving(0.08);
     expect(sim.cycles).toBe(1);
     expect(sim.lastCycle?.valid).toBe(true);
-    expect(sim.lastCycle!.leftover).toBeGreaterThan(0.1);
+    expect(sim.lastCycle!.leftover).toBeGreaterThan(0.03);
+    expect(sim.lastCycle!.leftover).toBeLessThanOrEqual(0.1);
+  });
+
+  it('흙을 많이 남긴 채 돌아오면 아직 사이클이 끝난 것이 아니다', () => {
+    const sim = cycleLeaving(0.3);
+    expect(sim.load).toBeGreaterThan(0.2);
+    expect(sim.cycles).toBe(0);
+    expect(sim.reportCount).toBe(0);
+    expect(sim.dumpingStarted).toBe(true);
+  });
+
+  it('남겼던 흙만 다시 쏟는 것은 새 사이클이 아니다', () => {
+    const sim = cycleLeaving(0.08);
+    expect(sim.cycles).toBe(1);
+    // 새로 파지 않고 다시 덤프 구역으로 가서 남은 흙을 쏟는다
+    const left = -90 * DEG;
+    for (let i = 0; i < 4 * SIM_HZ; i++) sim.step(activeCommand({ boom: sim.pose().tipY < 2.4 ? 1 : 0 }));
+    while (sim.swing > left + 2 * DEG && sim.tick < 200 * SIM_HZ) sim.step(activeCommand({ swing: -0.6 }));
+    for (let i = 0; i < 2 * SIM_HZ; i++) sim.step(activeCommand());
+    for (let i = 0; i < 4 * SIM_HZ; i++) sim.step(activeCommand({ bucket: -1 }));
+    expect(sim.load).toBeLessThan(0.01);
+    expect(sim.cycles).toBe(1);
+    expect(sim.reportCount).toBe(1);
+  });
+
+  it('파는 중에 넘친 흙은 "도로 떨어뜨림"이나 "흘림"으로 세지 않는다', () => {
+    const sim = newSim();
+    for (let i = 0; i < 1.2 * SIM_HZ; i++) sim.step(activeCommand({ arm: -1 }));
+    for (let i = 0; i < 1.0 * SIM_HZ; i++) sim.step(activeCommand({ bucket: -1 }));
+    for (let i = 0; i < 2 * SIM_HZ; i++) sim.step(activeCommand({ boom: -1 }));
+    // 가득 찬 뒤에도 땅속에서 계속 긁는다
+    for (let i = 0; i < 5 * SIM_HZ; i++) sim.step(activeCommand({ arm: 1, boom: sim.pose().tipY > -0.25 ? -0.3 : 0 }));
+    expect(sim.captured).toBeGreaterThan(0.3);
+    expect(sim.burial).toBeGreaterThan(0.02);
+    expect(sim.returned).toBe(0);
+    expect(sim.spilled).toBe(0);
+    expect(sim.dumpingStarted).toBe(false);
+  });
+
+  it('급선회로 흘린 것은 "쏟기 시작"으로 보지 않는다', () => {
+    const sim = newSim();
+    for (let i = 0; i < 4 * SIM_HZ; i++) sim.step(activeCommand({ bucket: 1, boom: 0.5 }));
+    sim.load = EXCAVATOR_14T.bucketCapacity;
+    for (let i = 0; i < 2.5 * SIM_HZ; i++) sim.step(activeCommand({ swing: 1 }));
+    for (let i = 0; i < SIM_HZ; i++) sim.step(activeCommand({ swing: -1 }));
+    expect(sim.spilledBySwing + sim.returned).toBeGreaterThan(0.02);
+    expect(sim.dumpingStarted).toBe(false);
+  });
+
+  it('버킷을 땅에 박은 채로는 주행이 거의 되지 않는다', () => {
+    const free = newSim();
+    const stuck = newSim();
+    for (let i = 0; i < 1.2 * SIM_HZ; i++) stuck.step(activeCommand({ bucket: -1 }));
+    for (let i = 0; i < 3 * SIM_HZ; i++) stuck.step(activeCommand({ boom: -1 }));
+    expect(stuck.burial).toBeGreaterThan(0.05);
+    const z0 = stuck.z;
+    for (let i = 0; i < 2 * SIM_HZ; i++) {
+      free.step(activeCommand({ travelL: 1, travelR: 1 }));
+      stuck.step(activeCommand({ travelL: 1, travelR: 1 }));
+    }
+    expect(free.z).toBeGreaterThan(1.0);
+    expect(stuck.z - z0).toBeLessThan(free.z * 0.4);
   });
 
   it('선회하다 굴착 구역을 스쳐 지나가는 것만으로는 복귀로 치지 않는다', () => {

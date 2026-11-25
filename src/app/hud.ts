@@ -108,7 +108,7 @@ const TEMPLATE = `
   <div class="sep"></div>
   <div class="row"><span>파란 구역에 쏟음</span><span id="mDumped"></span></div>
   <div class="row"><span>구역 밖에 흘림</span><span id="mSpilled"></span></div>
-  <div class="row"><span>들다가 도로 떨어뜨림</span><span id="mReturned"></span></div>
+  <div class="row"><span>들다가 떨어뜨림</span><span id="mReturned"></span></div>
   <div id="dev" class="hidden">
     <div class="sep"></div>
     <div class="row"><span>부피 보존 오차</span><span id="mError"></span></div>
@@ -191,7 +191,7 @@ const TEMPLATE = `
   </div>
   <div class="keys">
     <span><kbd>R</kbd> 시동</span><span><kbd>Shift</kbd> 미세 조작</span>
-    <span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>H</kbd> 도움말</span>
+    <span><kbd>V</kbd> 운전석·외부 시점</span><span><kbd>G</kbd> 시범 보기</span><span><kbd>C</kbd> 안내 켜고 끄기</span><span><kbd>X</kbd> 레버 표시 접기</span><span><kbd>H</kbd> 도움말</span>
   </div>
 </div>
 <div id="tags">
@@ -229,6 +229,7 @@ const TEMPLATE = `
       <div class="k"><span>레버 방식 바꾸기</span><span><kbd>P</kbd></span></div>
       <div class="k"><span>시범 보기</span><span><kbd>G</kbd></span></div>
       <div class="k"><span>단계 안내 켜고 끄기</span><span><kbd>C</kbd></span></div>
+      <div class="k"><span>아래 레버 표시 접기</span><span><kbd>X</kbd></span></div>
       <div class="k"><span>처음부터 다시</span><span><kbd>Backspace</kbd></span></div>
       <div class="k"><span>개발자용 측정 표시</span><span><kbd>M</kbd></span></div>
       <h3>알아 두기</h3>
@@ -241,6 +242,15 @@ const TEMPLATE = `
   </div>
 </div>
 `;
+
+/** 운전석 이름표가 장치에서 어느 쪽으로 붙는지 */
+const TAG_OFFSET: Record<string, string> = {
+  joyL: 'translate(-50%, -160%)',
+  joyR: 'translate(-50%, -160%)',
+  travel: 'translate(-50%, -190%)',
+  lock: 'translate(-108%, -30%)',
+  dial: 'translate(12%, -60%)',
+};
 
 const LEFT_KEYS = { up: 'W', down: 'S', left: 'A', right: 'D' };
 const RIGHT_KEYS = { up: 'I', down: 'K', left: 'J', right: 'L' };
@@ -264,6 +274,11 @@ export class Hud {
 
   toggleDev(): void {
     this.el.dev.classList.toggle('hidden');
+  }
+
+  /** 익숙해진 뒤에는 아래 레버 설명을 접어 화면을 넓게 쓴다 */
+  toggleLevers(): void {
+    this.root.classList.toggle('nolevers');
   }
 
   private setLabels(pattern: LeverPattern): void {
@@ -372,14 +387,18 @@ export class Hud {
     const h = b.tipY;
     el.roHeight.textContent = b.touching
       ? h < -0.03
-        ? `땅속 ${(-h).toFixed(2)} m`
+        ? `땅에 닿음 · 처음 지면보다 ${(-h).toFixed(2)} m 아래`
         : '땅에 닿음'
       : `지면 위 ${Math.max(0, b.above).toFixed(2)} m`;
     el.roHeight.className = b.touching ? 'hot' : '';
     el.roFacing.textContent = b.facing;
-    el.roFacing.className = b.fill > 0.08 && b.openUp < 50 ? 'hot' : '';
+    el.roFacing.className = b.fill > 0.08 && b.facing !== '위' ? 'hot' : b.facing === '위' ? 'fine' : '';
     const swing = sim.swing / DEG;
-    el.roSwing.textContent = Math.abs(swing) < 0.5 ? '정면' : `${swing < 0 ? '왼쪽' : '오른쪽'} ${Math.abs(swing).toFixed(0)}°`;
+    const side = (deg: number) => `${deg < 0 ? '왼쪽' : '오른쪽'} ${Math.abs(deg).toFixed(0)}°`;
+    const heading = sim.heading / DEG;
+    // 주행으로 차체를 돌렸으면 차체 방향도 함께 보여 준다
+    el.roSwing.textContent =
+      (Math.abs(swing) < 0.5 ? '정면' : side(swing)) + (Math.abs(heading) < 0.5 ? '' : ` · 차체 ${side(heading)}`);
     el.roZone.textContent = b.zone === 'dig' ? '노란 구역 위' : b.zone === 'dump' ? '파란 구역 위' : '구역 밖';
     el.roZone.className = b.zone;
 
@@ -434,7 +453,7 @@ export class Hud {
     el.tags.querySelectorAll<HTMLElement>('.tag').forEach((tag) => {
       const at = s.tags.find((t) => t.id === tag.dataset.id);
       tag.style.display = at ? '' : 'none';
-      if (at) tag.style.transform = `translate(${at.x.toFixed(0)}px, ${at.y.toFixed(0)}px) translate(-50%, -150%)`;
+      if (at) tag.style.transform = `translate(${at.x.toFixed(0)}px, ${at.y.toFixed(0)}px) ${TAG_OFFSET[at.id] ?? 'translate(-50%, -150%)'}`;
     });
     el.fine.classList.toggle('hidden', !s.fine);
 
@@ -444,7 +463,8 @@ export class Hud {
     const fill = sim.load / cap;
     el.mLoad.textContent = `${sim.load.toFixed(2)} m³ (${Math.round(fill * 100)}%)`;
     el.barLoad.style.width = `${Math.min(100, fill * 100).toFixed(0)}%`;
-    const resist = 1 - sim.digResist;
+    // 암·버킷으로 긁을 때 흙이 버티는 정도 (붐으로 누르는 힘의 한계는 알림으로 따로 알려 준다)
+    const resist = 1 - sim.soilResist;
     el.mResist.textContent = resist < 0.05 ? '없음' : resist < 0.45 ? '적당' : resist < 0.85 ? '깊음' : '막힘';
     el.mResist.className = resist >= 0.85 ? 'warnText' : '';
     el.barResist.style.width = `${(resist * 100).toFixed(0)}%`;

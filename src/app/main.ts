@@ -84,6 +84,9 @@ keyboard.onAction = (action) => {
     case 'coach':
       coachOn = !coachOn;
       break;
+    case 'levers':
+      hud.toggleLevers();
+      break;
     case 'pattern':
       pattern = pattern === 'ISO' ? 'SAE' : 'ISO';
       break;
